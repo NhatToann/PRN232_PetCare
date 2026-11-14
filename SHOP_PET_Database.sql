@@ -311,7 +311,9 @@ CREATE TABLE [dbo].[Customer](
 	[reset_token] [varchar](255) NULL,
 	[reset_token_expiry] [datetime] NULL,
 	[role] [nvarchar](50) NOT NULL,
-PRIMARY KEY CLUSTERED 
+	[avatar_url] [nvarchar](500) NULL,
+	[birth_date] [date] NULL,
+PRIMARY KEY CLUSTERED
 (
 	[customer_id] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
@@ -7120,7 +7122,7 @@ BEGIN
     -- Check if already checked in today
     IF EXISTS (
         SELECT 1 FROM AttendanceRecords
-        WHERE staff_id = @p_staff_id
+        WHERE StaffID = @p_staff_id
           AND CAST(CheckIn AS DATE) = CAST(GETDATE() AS DATE)
     )
     BEGIN
@@ -7128,7 +7130,7 @@ BEGIN
         RETURN;
     END;
 
-    INSERT INTO AttendanceRecords (staff_id, CheckIn, CreatedAt)
+    INSERT INTO AttendanceRecords (StaffID, CheckIn, CreatedAt)
     VALUES (@p_staff_id, GETDATE(), GETDATE());
 
     PRINT N'Check-in successful at ' + CONVERT(NVARCHAR, GETDATE(), 120);
@@ -7151,7 +7153,7 @@ BEGIN
     -- Get the most recent shift that hasn't been checked out
     SELECT TOP 1 @checkin = CheckIn
     FROM AttendanceRecords
-    WHERE staff_id = @p_staff_id AND CheckOut IS NULL
+    WHERE StaffID = @p_staff_id AND CheckOut IS NULL
     ORDER BY CheckIn DESC;
 
     IF @checkin IS NULL
@@ -7165,7 +7167,7 @@ BEGIN
     SET CheckOut = GETDATE(),
         TotalHours = ROUND(DATEDIFF(MINUTE, @checkin, GETDATE()) / 60.0, 2),
         Status = N'Completed'
-    WHERE staff_id = @p_staff_id AND CheckOut IS NULL;
+    WHERE StaffID = @p_staff_id AND CheckOut IS NULL;
 
     PRINT N'Check-out successful at ' + CONVERT(NVARCHAR, GETDATE(), 120);
 END;
@@ -7203,9 +7205,27 @@ BEGIN
     DEALLOCATE cur;
 END;
 GO
+/****** Object:  Trigger [dbo].[tr_MedicalRecord_Update]    Script Date: 21/07/2026 1:38:19 CH ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TRIGGER [dbo].[tr_MedicalRecord_Update]
+ON dbo.MedicalRecord
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE mr
+    SET updated_at = GETDATE()
+    FROM dbo.MedicalRecord mr
+    INNER JOIN inserted i ON mr.record_id = i.record_id;
+END;
+GO
 USE [master]
 GO
-ALTER DATABASE [SHOP_PET_Database] SET  READ_WRITE 
+ALTER DATABASE [SHOP_PET_Database] SET  READ_WRITE
 GO
 
 GO
