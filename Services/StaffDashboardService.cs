@@ -166,7 +166,22 @@ namespace PetShop.Services
                 return false;
             }
 
-            schedule.Status = "Đã Check-in";
+            var now = DateTime.Now;
+            var validation = StaffCheckInPolicy.Validate(schedule.WorkDate.ToDateTime(schedule.StartTime), schedule.WorkDate.ToDateTime(schedule.EndTime), now);
+            if (validation is not null)
+            {
+                _logger.LogWarning("Check-in ca {ScheduleId} bị từ chối: {Reason}", scheduleId, validation);
+                return false;
+            }
+            if (OrderStatusText.Normalize(schedule.Status) is "CheckedIn" or "Đã Check-in") return true;
+            if (!schedule.StaffId.HasValue) return false;
+            _context.AttendanceRecords.Add(new Models.AttendanceRecord
+            {
+                StaffId = schedule.StaffId.Value, CheckIn = now, CreatedAt = now,
+                IsLate = now > schedule.WorkDate.ToDateTime(schedule.StartTime), Status = "Đang làm"
+            });
+            // Mã ASCII tránh mất dấu khi lưu vào cột varchar của database cũ.
+            schedule.Status = "CheckedIn";
 
             try
             {

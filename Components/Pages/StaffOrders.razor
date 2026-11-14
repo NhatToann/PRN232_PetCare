@@ -1,3 +1,6 @@
+@inject PetShop.Services.StaffOrderDetailService DetailService
+@inject ILogger<StaffOrders> Logger
+@inject PetShop.Services.StaffActionFeedback Feedback
 @page "/system/orders"
 @layout PetShop_PRN222.Components.Layout.StaffWorkspaceLayout
 @rendermode InteractiveServer
@@ -9,7 +12,7 @@
 
 <PageTitle>Quản Lý Đơn Hàng</PageTitle>
 
-<div class="row mb-4">
+<div class="pet-page-heading row mb-4">
     <div class="col-12">
         <h2 class="fw-bold mb-1 text-dark">Quản Lý Đơn Hàng</h2>
         <p class="text-muted fs-5">Xử lý tiến trình giao hàng theo thời gian thực</p>
@@ -17,28 +20,29 @@
 </div>
 
 <!-- 3 THẺ THỐNG KÊ NHANH (CÓ ĐƠN HỦY) -->
-<div class="row g-4 mb-4">
+<div class="order-overview row g-4 mb-4">
     <div class="col-md-4">
-        <div class="fox-card p-4 h-100 border-0 shadow-sm bg-white" style="border-left: 4px solid #f59e0b !important;">
+        <div class="fox-card p-4 h-100 border-0 shadow-sm bg-white">
             <div class="text-muted fw-bold text-uppercase mb-2" style="font-size: 0.8rem;">Cần Xử Lý Ngay</div>
             <h2 class="fw-bold text-dark mb-0">@pendingCount <span class="fs-6 text-muted fw-normal">đơn chờ</span></h2>
         </div>
     </div>
     <div class="col-md-4">
-        <div class="fox-card p-4 h-100 border-0 shadow-sm bg-white" style="border-left: 4px solid #3b82f6 !important;">
+        <div class="fox-card p-4 h-100 border-0 shadow-sm bg-white">
             <div class="text-muted fw-bold text-uppercase mb-2" style="font-size: 0.8rem;">Đang Giao Cho Khách</div>
             <h2 class="fw-bold text-dark mb-0">@shippingCount <span class="fs-6 text-muted fw-normal">đơn hàng</span></h2>
         </div>
     </div>
     <div class="col-md-4">
-        <div class="fox-card p-4 h-100 border-0 shadow-sm bg-white" style="border-left: 4px solid #ef4444 !important;">
+        <div class="fox-card p-4 h-100 border-0 shadow-sm bg-white">
             <div class="text-muted fw-bold text-uppercase mb-2" style="font-size: 0.8rem;">Đơn Hàng Đã Hủy</div>
             <h2 class="fw-bold text-danger mb-0">@cancelledCount <span class="fs-6 text-muted fw-normal">đơn thất bại</span></h2>
         </div>
     </div>
 </div>
 
-<div class="fox-card p-0 overflow-hidden shadow-sm border-0">
+<div class="management-toolbar"><div><span class="eyebrow">TRUNG TÂM XỬ LÝ</span><h5>Danh sách đơn hàng</h5></div><div class="toolbar-filters"><input class="form-control" placeholder="Tìm mã đơn hoặc khách hàng…" @bind="query" @bind:event="oninput" /><select class="form-select" @bind="statusFilter"><option value="">Tất cả trạng thái</option>@foreach(var status in new[]{"Chờ xác nhận","Đang đóng gói","Đang giao hàng","Hoàn thành","Đã hủy"}){<option>@status</option>}</select></div></div>
+<div class="fox-card p-0 overflow-auto shadow-sm border-0 management-table">
     @if (orders == null)
     {
         <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
@@ -56,9 +60,9 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach (var o in orders)
+                @foreach (var o in orders.Where(o => (string.IsNullOrEmpty(statusFilter) || o.Status == statusFilter) && (string.IsNullOrWhiteSpace(query) || o.CustomerName.Contains(query, StringComparison.OrdinalIgnoreCase) || o.OrderId.ToString().Contains(query))))
                 {
-                    <tr class="@(o.Status == "Hoàn thành" || o.Status == "Đã hủy" ? "opacity-75 bg-light" : "")">
+                    <tr @onclick="() => ViewDetail(o)" tabindex="0" @onkeydown='async e => { if (e.Key == "Enter") await ViewDetail(o); }' style="cursor:pointer" class="@(o.Status == "Hoàn thành" || o.Status == "Đã hủy" ? "opacity-75 bg-light" : "")">
                         <td class="text-start ps-4 py-3">
                             <div class="fw-bold fs-5 text-dark">#ORD-@(o.OrderId.ToString("D4"))</div>
                             <div class="text-muted fw-medium"><i class="fas fa-user-circle me-1"></i> @o.CustomerName</div>
@@ -92,7 +96,7 @@
                             }
                         </td>
                         <td class="pe-4">
-                            <button class="btn btn-sm rounded-pill px-4 fw-bold shadow-sm @(o.Status == "Hoàn thành" || o.Status == "Đã hủy" ? "btn-light text-muted border" : "btn-outline-primary")" @onclick="() => ViewDetail(o)">
+                            <button class="btn btn-sm rounded-pill px-4 fw-bold shadow-sm @(o.Status == "Hoàn thành" || o.Status == "Đã hủy" ? "btn-light text-muted border" : "btn-outline-primary")" @onclick="() => ViewDetail(o)" @onclick:stopPropagation="true">
                                 @(o.Status == "Hoàn thành" || o.Status == "Đã hủy" ? "Xem" : "Xử lý")
                             </button>
                         </td>
@@ -106,13 +110,22 @@
 @if (selectedOrder != null)
 {
     <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.6);">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl order-detail-dialog" role="dialog" aria-modal="true" aria-label="Chi tiết đơn hàng">
             <div class="modal-content rounded-4 border-0 shadow-lg">
                 <div class="modal-header text-white p-4" style="background: linear-gradient(135deg, #6c5ce7, #a29bfe);">
                     <h5 class="fw-bold mb-0"><i class="fas fa-file-invoice me-2"></i> Tiến Trình Đơn Hàng #ORD-@(selectedOrder.OrderId.ToString("D4"))</h5>
                     <button class="btn-close btn-close-white" @onclick="() => selectedOrder = null"></button>
                 </div>
-                <div class="modal-body p-5 bg-white">
+                <div class="modal-body p-4 bg-white">
+                    @if (detailLoading) { <p role="status">Đang tải chi tiết đơn hàng…</p> }
+                    else if (orderDetail is not null)
+                    {
+                        <div class="order-detail-summary"><section><span class="eyebrow">KHÁCH HÀNG & GIAO HÀNG</span><h5>Tên: @orderDetail.Customer</h5><p>SĐT: @orderDetail.Phone</p><p>Email: @orderDetail.Email</p><p><i class="fas fa-location-dot me-2"></i>@orderDetail.Address</p></section><section><span class="eyebrow">THÔNG TIN ĐƠN HÀNG</span><p>Ngày đặt: @selectedOrder.OrderDate.ToString("dd/MM/yyyy HH:mm")</p><p>Trạng thái: <strong>@selectedOrder.Status</strong></p><p>Thanh toán: @orderDetail.PaymentMethod · @orderDetail.PaymentStatus</p>@if(orderDetail.PaidAt.HasValue){<p>Đã thanh toán lúc @orderDetail.PaidAt.Value.ToString("dd/MM/yyyy HH:mm")</p>}</section></div>
+                        <div class="table-responsive mb-3"><table class="table align-middle"><thead><tr><th>Sản phẩm / dịch vụ</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>@foreach(var line in orderDetail.Items){<tr><td><img src="@PetShop.Components.Shared.ImageUrl.Safe(line.ImageUrl)" alt="@line.Name" class="order-line-image" /> @line.Name</td><td>@line.Quantity</td><td>@PetShop.Components.Shared.Format.Vnd(line.Price)</td><td>@PetShop.Components.Shared.Format.Vnd(line.Price * line.Quantity)</td></tr>}</tbody></table></div>
+                        <div class="order-detail-total"><span>Tổng giá trị đơn hàng</span><strong>@PetShop.Components.Shared.Format.Vnd(selectedOrder.TotalAmount)</strong></div>
+                        <p class="small text-muted mt-3">Ghi chú khách hàng: @(string.IsNullOrWhiteSpace(orderDetail.Note) ? "Không có" : orderDetail.Note)</p>
+                    }
+
 
                     @if (selectedOrder.Status == "Đã hủy")
                     {
@@ -121,7 +134,7 @@
                     else
                     {
                         <!-- TIMELINE UI TIẾNG VIỆT -->
-                        <div class="position-relative mb-5 mt-3">
+                        <div class="position-relative mb-5 mt-3 order-progress">
                             <div class="progress position-absolute top-50 translate-middle-y w-100" style="height: 4px; z-index: 1;">
                                 <div class="progress-bar bg-success" style="width: @(selectedOrder.Status == "Hoàn thành" ? "100" : (selectedOrder.Status == "Đang giao hàng" ? "66" : (selectedOrder.Status == "Đang đóng gói" || selectedOrder.Status == "Đang xử lý" ? "33" : "0")))%; transition: 0.5s;"></div>
                             </div>
@@ -175,9 +188,12 @@
 }
 
 @code {
+    private string query = string.Empty, statusFilter = string.Empty;
     public class OrderDto { public int OrderId { get; set; } public string CustomerName { get; set; } = ""; public DateTime OrderDate { get; set; } public decimal TotalAmount { get; set; } public string Status { get; set; } = ""; }
     private List<OrderDto>? orders;
     private OrderDto? selectedOrder;
+    private StaffOrderDetail? orderDetail;
+    private bool detailLoading;
 
     private int pendingCount = 0;
     private int shippingCount = 0;
@@ -204,7 +220,8 @@
 
     private async Task Load()
     {
-        var rows = await ReportsService.GetOrderListAsync(100);
+        // Bộ lọc chạy trên toàn bộ đơn để không bỏ sót đơn ngoài 100 dòng đầu.
+        var rows = await ReportsService.GetOrderListAsync(int.MaxValue);
 
         orders = rows
             .Select(o => new OrderDto
@@ -212,7 +229,7 @@
                 OrderId = o.OrderId,
                 OrderDate = o.OrderDate,
                 TotalAmount = o.TotalAmount,
-                Status = o.Status,
+                Status = NormalizeOrderStatus(o.Status),
                 CustomerName = o.CustomerName
             })
             .ToList();
@@ -222,6 +239,8 @@
         cancelledCount = orders.Count(o => o.Status == "Đã hủy");
     }
 
+    private static string NormalizeOrderStatus(string status) => OrderStatusText.Normalize(status);
+
     private int GetSortWeight(string status)
     {
         if (status == "Chờ xác nhận") return 1;
@@ -230,13 +249,19 @@
         return 4; // Hoàn thành, Đã hủy rớt xuống đáy
     }
 
-    private void ViewDetail(OrderDto o) { selectedOrder = o; }
+    private async Task ViewDetail(OrderDto o)
+    {
+        selectedOrder = o; orderDetail = null; detailLoading = true;
+        try { var detail = await DetailService.GetAsync(o.OrderId); if (selectedOrder?.OrderId == o.OrderId) orderDetail = detail; }
+        catch (Exception ex) { Logger.LogError(ex, "Không tải được chi tiết đơn {OrderId}.", o.OrderId); Feedback.Show("Không tải được chi tiết đơn hàng.", true); }
+        finally { detailLoading = false; }
+    }
 
     private async Task ChangeStatus(string st)
     {
         if (selectedOrder != null)
         {
-            await ReportsService.UpdateOrderStatusAsync(selectedOrder.OrderId, st);
+            if (!await Feedback.RunAsync(() => ReportsService.UpdateOrderStatusAsync(selectedOrder.OrderId, st), st == "Đã hủy" ? "Đã hủy đơn hàng thành công." : "Đã cập nhật đơn hàng: " + st, destructive: st == "Đã hủy")) return;
             selectedOrder = null;
             await Load();
             StateHasChanged();

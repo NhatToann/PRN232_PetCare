@@ -24,6 +24,9 @@ namespace PetShop_PRN222.Components.Staff;
 /// </summary>
 public partial class NotificationBell : ComponentBase, IAsyncDisposable
 {
+    [Inject] private StaffActionFeedback Feedback { get; set; } = default!;
+    [Inject] private IStaffProfileService Profiles { get; set; } = default!;
+
     [Inject] private INotificationClient NotificationClient { get; set; } = default!;
 
     [Inject] private UserSessionService UserSession { get; set; } = default!;
@@ -90,7 +93,8 @@ public partial class NotificationBell : ComponentBase, IAsyncDisposable
     /// <summary>Kích thước icon chuông (22 cho topbar, 20 cho mặc định).</summary>
     public int IconSize => Variant == "topbar" ? 22 : 20;
 
-    private int EffectiveStaffId => StaffId ?? UserSession.CurrentUser?.UserId ?? 0;
+    private int resolvedStaffId;
+    private int EffectiveStaffId => StaffId ?? resolvedStaffId;
 
     protected override async Task OnInitializedAsync()
     {
@@ -103,6 +107,9 @@ public partial class NotificationBell : ComponentBase, IAsyncDisposable
 
         try { await UserSession.LoadAsync(); }
         catch (Exception ex) { Logger.LineWarning($"[NotificationBell] UserSession.LoadAsync threw: {ex.GetType().Name}"); }
+
+        var user = UserSession.CurrentUser;
+        if (user is not null) resolvedStaffId = await Profiles.ResolveStaffIdAsync(user.UserId, user.Email);
 
         await LoadBadgeAsync();
 
@@ -376,11 +383,11 @@ public partial class NotificationBell : ComponentBase, IAsyncDisposable
             var result = await NotificationClient.AcceptRequestAsync(requestId, staffId);
             if (!result.IsSuccess)
             {
-                await JS.InvokeVoidAsync("alert", result.Error ?? "Không thể chấp nhận.");
+                Feedback.Show(result.Error ?? "Không thể chấp nhận.", true);
                 return;
             }
 
-            await JS.InvokeVoidAsync("alert", "Đã chấp nhận yêu cầu đổi ca.");
+            Feedback.Show("Đã chấp nhận yêu cầu đổi ca.");
             await LoadAllAsync();
             await OnShiftExchangeUpdate.InvokeAsync();
         }
@@ -391,7 +398,7 @@ public partial class NotificationBell : ComponentBase, IAsyncDisposable
         catch (Exception ex)
         {
             Logger.LineError(ex, $"[NotificationBell] Không thể chấp nhận yêu cầu #{requestId}: {ex.Message}");
-            await JS.InvokeVoidAsync("alert", ex.Message);
+            Feedback.Show("Không thể xử lý yêu cầu. Vui lòng thử lại.", true);
         }
         finally
         {
@@ -417,7 +424,7 @@ public partial class NotificationBell : ComponentBase, IAsyncDisposable
             var result = await NotificationClient.DeclineRequestAsync(requestId, staffId);
             if (!result.IsSuccess)
             {
-                await JS.InvokeVoidAsync("alert", result.Error ?? "Không thể từ chối.");
+                Feedback.Show(result.Error ?? "Không thể từ chối.", true);
                 return;
             }
 
@@ -430,7 +437,7 @@ public partial class NotificationBell : ComponentBase, IAsyncDisposable
         catch (Exception ex)
         {
             Logger.LineError(ex, $"[NotificationBell] Không thể từ chối yêu cầu #{requestId}: {ex.Message}");
-            await JS.InvokeVoidAsync("alert", ex.Message);
+            Feedback.Show("Không thể xử lý yêu cầu. Vui lòng thử lại.", true);
         }
         finally
         {
@@ -500,6 +507,8 @@ public partial class NotificationBell : ComponentBase, IAsyncDisposable
 
     private void HandleSessionChanged() => InvokeAsync(async () =>
     {
+        var user = UserSession.CurrentUser;
+        resolvedStaffId = user is null ? 0 : await Profiles.ResolveStaffIdAsync(user.UserId, user.Email);
         // Đổi phiên ⇒ dữ liệu cũ không còn hợp lệ ⇒ reset cờ lazy-load.
         _fullDataLoaded = false;
 

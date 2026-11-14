@@ -1,3 +1,4 @@
+@inject PetShop.Services.StaffActionFeedback Feedback
 @page "/products/create"
 @layout PetShop_PRN222.Components.Layout.StaffWorkspaceLayout
 @rendermode InteractiveServer
@@ -6,18 +7,22 @@
 @using System.IO
 @inject IProductManagementService ProductService
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Environment
+@inject NavigationManager Navigation
 
 <PageTitle>Thêm Sản Phẩm Mới</PageTitle>
+<div class="product-create-page">
 
 <div class="row mb-4">
     <div class="col-12">
         <h2 class="fw-bold mb-1 text-dark">Thêm Sản Phẩm Mới</h2>
+        <p class="text-muted mt-2">Tạo sản phẩm mới cho cửa hàng. Thêm thông tin và hình ảnh trước khi lưu.</p>
     </div>
 </div>
 
 <div class="row g-4">
     <div class="col-xl-8">
-        <div class="fox-card p-5 border-0 shadow-sm">
+        <div class="fox-card p-4 p-md-5 border-0 shadow-sm">
+            <h5 class="fw-bold mb-4"><i class="fas fa-box-open text-primary me-2"></i> Thông tin sản phẩm</h5>
             @if (!string.IsNullOrEmpty(successMessage))
             {
                 <div class="alert alert-success d-flex align-items-center mb-4 fs-5 rounded-4 shadow-sm"><i class="fas fa-check-circle me-3 fs-3"></i> @successMessage</div>
@@ -46,7 +51,8 @@
                         <InputTextArea @bind-Value="newProduct.Description" class="form-control form-control-lg bg-light border-0" rows="4"></InputTextArea>
                     </div>
                 </div>
-                <div class="text-end mt-5 pt-4 border-top">
+                <div class="d-flex justify-content-between align-items-center mt-4 pt-4 border-top">
+                    <a href="/products/list" class="btn btn-light rounded-pill px-4">Hủy</a>
                     <button type="submit" class="btn btn-primary btn-lg rounded-pill px-5 fw-bold shadow border-0" style="background: linear-gradient(135deg, #3b82f6, #2563eb);">
                         <i class="fas fa-save me-2"></i> Lưu Sản Phẩm
                     </button>
@@ -63,11 +69,23 @@
                 {
                     <img src="@newProduct.ImageUrl" class="img-fluid rounded-4 shadow-sm w-100" style="max-height: 220px; object-fit: cover;" />
                 }
+                else
+                {
+                    <div class="product-image-placeholder"><i class="fas fa-camera fs-1 mb-3"></i><span>Ảnh sản phẩm</span><small>Chọn ảnh rõ nét, tối đa 5 MB</small></div>
+                }
             </div>
             <InputFile OnChange="HandleImageUpload" class="form-control form-control-lg shadow-sm" accept="image/*" />
         </div>
     </div>
 </div>
+</div>
+<style>
+    .product-create-page { max-width: 1200px; margin: 0 auto; }
+    .product-create-page .fox-card { border-radius: 24px; background: white; }
+    .product-create-page .form-control { border: 1px solid #e3e8ef !important; border-radius: 12px; padding: 13px 16px; background: #fafbfd !important; }
+    .product-create-page .form-control:focus { border-color: #6366f1 !important; box-shadow: 0 0 0 3px #6366f11a; }
+    .product-image-placeholder { min-height: 240px; border: 2px dashed #d8deeb; border-radius: 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #79879d; gap: 8px; background: #f8faff; }
+</style>
 
 @code {
     private Product newProduct = new Product { IsDeleted = false, StockQuantity = 10, Price = 50000 };
@@ -93,10 +111,11 @@
     private async Task SaveProduct()
     {
         // Ảnh mặc định được ProductManagementService áp dụng (trước đây Razor tự gán).
-        await ProductService.CreateAsync(newProduct);
+        if (!await Feedback.RunAsync(async () => { await ProductService.CreateAsync(newProduct); return true; }, "Đã thêm sản phẩm thành công.")) return;
 
+        Feedback.Show("Đã thêm sản phẩm thành công.");
         successMessage = $"Thêm sản phẩm '{newProduct.Name}' thành công!";
-        newProduct = new Product { IsDeleted = false, StockQuantity = 10, Price = 50000 };
-        StateHasChanged();
+        await Task.Delay(700);
+        Navigation.NavigateTo("/products/list");
     }
 }

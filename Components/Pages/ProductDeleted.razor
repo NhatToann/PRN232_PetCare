@@ -1,3 +1,4 @@
+@inject PetShop.Services.StaffActionFeedback Feedback
 @page "/products/deleted"
 @layout PetShop_PRN222.Components.Layout.StaffWorkspaceLayout
 @rendermode InteractiveServer
@@ -66,11 +67,11 @@
 
     private async Task Restore(int id)
     {
-        if (await ProductService.RestoreAsync(id)) { await Load(); }
+        if (await Feedback.RunAsync(() => ProductService.RestoreAsync(id), "Đã khôi phục sản phẩm.")) { await Load(); }
     }
 
     private async Task HardDelete(int id)
     {
-        if (await ProductService.PermanentDeleteAsync(id)) { await Load(); }
+        if (await Feedback.RunAsync(() => ProductService.PermanentDeleteAsync(id), "Đã xóa sản phẩm vĩnh viễn.")) { await Load(); }
     }
 }

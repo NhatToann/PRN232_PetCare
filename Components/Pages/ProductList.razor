@@ -1,3 +1,4 @@
+@inject PetShop.Services.StaffActionFeedback Feedback
 @page "/products/list"
 @layout PetShop_PRN222.Components.Layout.StaffWorkspaceLayout
 @rendermode InteractiveServer
@@ -7,8 +8,9 @@
 @inject IJSRuntime JSRuntime
 
 <PageTitle>Danh Sách Sản Phẩm</PageTitle>
+<link rel="stylesheet" href="css/staff-dashboard.css" />
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="pet-page-heading d-flex justify-content-between align-items-center mb-4">
     <div><h2 class="fw-bold mb-0 text-dark">Danh Sách Sản Phẩm</h2><p class="text-muted mb-0">Tổng số: <span class="fw-bold text-primary">@allProducts?.Count</span> sản phẩm</p></div>
     <a href="/products/create" class="btn btn-primary rounded-pill px-4 fw-bold shadow"><i class="fas fa-plus me-2"></i> Tạo mới</a>
 </div>
@@ -20,7 +22,7 @@
     </div>
 </div>
 
-<div class="fox-card p-0 overflow-hidden shadow-sm border-0">
+<div class="fox-card p-0 overflow-auto shadow-sm border-0 management-table">
     @if (displayedProducts == null)
     {
         <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
@@ -72,7 +74,7 @@
                         <td class="pe-4">
                             <button class="btn btn-sm btn-light fw-bold me-2 shadow-sm text-primary" @onclick="() => ShowDetail(p)"><i class="fas fa-eye"></i> Xem</button>
                             <a href="/products/edit/@p.ProductId" class="btn btn-sm btn-light fw-bold me-2 shadow-sm text-warning"><i class="fas fa-edit"></i> Sửa</a>
-                            <button class="btn btn-sm btn-light fw-bold shadow-sm text-danger" @onclick="() => ConfirmDelete(p.ProductId)"><i class="fas fa-trash"></i></button>
+                            <button class="btn btn-sm btn-light fw-bold shadow-sm text-danger" aria-label="Xóa sản phẩm" title="Xóa sản phẩm" @onclick="() => ConfirmDelete(p.ProductId)"><i class="fas fa-trash"></i></button>
                         </td>
                     </tr>
                 }
@@ -86,8 +88,8 @@
 {
     <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content rounded-4 border-0">
-                <div class="modal-header border-0 pb-0 justify-content-end"><button class="btn-close" @onclick="() => detailProduct = null"></button></div>
+            <div class="modal-content rounded-4 border-0 product-preview-modal">
+                <div class="modal-header border-0 pb-0 justify-content-end"><button type="button" class="product-preview-close" aria-label="Đóng chi tiết sản phẩm" @onclick="() => detailProduct = null">×</button></div>
                 <div class="modal-body text-center pt-0 px-5 pb-5">
                     <img src="@PetShop.Components.Shared.ImageUrl.Safe(detailProduct.ImageUrl)" class="rounded-4 shadow mb-4" style="width: 200px; height: 200px; object-fit: cover;" fetchpriority="high" decoding="async" />
                     <h4 class="fw-bold text-dark">@detailProduct.Name</h4>
@@ -136,7 +138,7 @@
         bool isConfirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Bạn có chắc chắn muốn chuyển sản phẩm này vào Thùng rác không?");
         if (isConfirmed)
         {
-            await ProductService.SoftDeleteAsync(id);
+            if (!await Feedback.RunAsync(() => ProductService.SoftDeleteAsync(id), "Đã xóa sản phẩm thành công.", destructive: true)) return;
             await LoadProducts();
         }
     }

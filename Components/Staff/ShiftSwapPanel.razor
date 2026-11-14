@@ -1,0 +1,81 @@
+@using PetShop.Models
+@using PetShop.Services
+@using System.Net.Http.Json
+@inject IHttpClientFactory Factory
+@inject NavigationManager Navigation
+@inject UserSessionService Session
+@inject IStaffProfileService Profiles
+@inject ILogger<ShiftSwapPanel> Logger
+
+<div class="card p-4 mb-4 border-0 shadow-sm shift-swap-panel">
+    <button class="btn btn-light text-start fw-bold" @onclick="() => open = !open"><i class="fas fa-arrows-rotate text-primary me-2"></i> Đổi ca <span class="float-end">@(open ? "▲" : "▼")</span></button>
+    @if (open)
+    {
+    <h5 class="mt-3">Gửi yêu cầu đổi ca</h5><p class="text-muted small">Đổi ca từ ngày mai, chờ đồng nghiệp xác nhận.</p>
+    <button class="btn btn-outline-primary mb-2" @onclick="Load" disabled="@busy"><i class="fas fa-rotate me-2"></i>Cập nhật lịch làm việc</button>
+    @if (staffId > 0)
+    {
+        <label>Ca của bạn</label>
+        <select class="form-select mb-2" @bind="fromId"><option value="0">Chọn ca</option>
+            @foreach (var shift in shifts.Where(x => x.StaffId == staffId)) { <option value="@shift.ScheduleId">@Label(shift)</option> }
+        </select>
+        <label>Ca muốn nhận từ nhân viên khác</label>
+        <select class="form-select mb-2" @bind="toId"><option value="0">Chọn ca</option>
+            @foreach (var shift in shifts.Where(x => x.StaffId != staffId && x.StaffId > 0)) { <option value="@shift.ScheduleId">@Label(shift)</option> }
+        </select>
+        <input class="form-control mb-2" @bind="reason" placeholder="Lý do đổi ca" maxlength="500" />
+        <button class="btn btn-primary" @onclick="Send" disabled="@busy">Gửi yêu cầu đổi ca</button>
+
+    }
+    @if (!string.IsNullOrEmpty(message)) { <div class="alert alert-info mt-2" role="status">@message</div> }
+    }
+</div>
+
+@code {
+    private List<ShiftOptionDto> shifts = new();
+    private int staffId, fromId, toId;
+    private bool busy;
+    private bool open;
+    private string reason = string.Empty, message = string.Empty;
+    private static string Label(ShiftOptionDto s) => $"{s.StaffName} — {s.WorkDate:dd/MM/yyyy} {s.StartTime:hh\\:mm}–{s.EndTime:hh\\:mm}";
+    private HttpClient Client()
+    {
+        var client = Factory.CreateClient();
+        client.BaseAddress = new Uri(Navigation.BaseUri);
+        client.DefaultRequestHeaders.Add("X-User-Id", Session.CurrentUser?.UserId.ToString());
+        client.DefaultRequestHeaders.Add("X-User-Role", "staff");
+        return client;
+    }
+    private async Task Load()
+    {
+        busy = true;
+        try
+        {
+            await Session.LoadAsync();
+            var user = Session.CurrentUser;
+            if (user is null) { message = "Vui lòng đăng nhập nhân viên."; return; }
+            staffId = await Profiles.ResolveStaffIdAsync(user.UserId, user.Email);
+            using var client = Client();
+            shifts = (await client.GetFromJsonAsync<List<ShiftOptionDto>>("api/shift-exchange/all-shifts") ?? new()).Where(s => s.WorkDate > DateOnly.FromDateTime(DateTime.Now)).ToList();
+            message = shifts.Count == 0 ? "Chưa có ca sắp tới để đổi." : string.Empty;
+        }
+        catch (Exception ex) { Logger.LogError(ex, "Không tải được lịch đổi ca."); message = "Không tải được lịch đổi ca. Vui lòng thử lại."; }
+        finally { busy = false; }
+    }
+    private async Task Send()
+    {
+        var from = shifts.FirstOrDefault(s => s.ScheduleId == fromId && s.StaffId == staffId);
+        var to = shifts.FirstOrDefault(s => s.ScheduleId == toId && s.StaffId != staffId);
+        if (from is null || to?.StaffId is null) { message = "Vui lòng chọn đủ hai ca hợp lệ."; return; }
+        busy = true;
+        try
+        {
+            using var client = Client();
+            using var response = await client.PostAsJsonAsync("api/shift-exchange/swap", new CreateSwapShiftRequestDto(staffId, from.WorkDate, to.WorkDate, fromId, toId, to.StaffId.Value, reason));
+            var result = await response.Content.ReadFromJsonAsync<ShiftExchangeActionResultDto>();
+            message = result?.Message ?? "Không đọc được kết quả đổi ca.";
+        }
+        catch (Exception ex) { Logger.LogError(ex, "Không gửi được yêu cầu đổi ca."); message = "Không gửi được yêu cầu đổi ca. Vui lòng thử lại."; }
+        finally { busy = false; }
+    }
+}

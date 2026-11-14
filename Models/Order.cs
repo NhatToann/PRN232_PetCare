@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace PetShop.Models
@@ -24,6 +24,8 @@ namespace PetShop.Models
         public DateTime? PaidAt { get; set; }
 
         public string? ShippingAddress { get; set; }
+
+        public string? CustomerNote { get; set; }
 
         public double? Latitude { get; set; }
 

@@ -6,8 +6,9 @@
 @inject IJSRuntime JSRuntime
 
 <PageTitle>Báo Cáo Doanh Thu</PageTitle>
+<link rel="stylesheet" href="css/staff-dashboard.css" />
 
-<div class="row mb-4">
+<div class="pet-page-heading row mb-4">
     <div class="col-12">
         <h2 class="fw-bold mb-1 text-dark">Báo Cáo Doanh Thu</h2>
         <p class="text-muted fs-5">Thống kê theo Thời gian, Phân tích biểu đồ & Top bán chạy</p>
@@ -20,21 +21,21 @@
 }
 else
 {
-    <div class="row g-4 mb-4">
+    <div class="revenue-kpis row g-4 mb-4">
         <div class="col-md-4">
-            <div class="fox-card p-4 h-100 text-white shadow-sm hover-scale" style="background: linear-gradient(135deg, #3b82f6, #60a5fa); border-radius: 16px;">
+            <div class="metric-card fox-card p-4 h-100 shadow-sm hover-scale">
                 <h6 class="fw-bold opacity-75 mb-3 text-uppercase"><i class="fas fa-calendar-day me-2"></i>Doanh Thu Hôm Nay</h6>
                 <h2 class="fw-bold mb-0">@PetShop.Components.Shared.Format.Vnd(revToday)</h2>
             </div>
         </div>
         <div class="col-md-4">
-            <div class="fox-card p-4 h-100 text-white shadow-sm hover-scale" style="background: linear-gradient(135deg, #10b981, #34d399); border-radius: 16px;">
+            <div class="metric-card fox-card p-4 h-100 shadow-sm hover-scale">
                 <h6 class="fw-bold opacity-75 mb-3 text-uppercase"><i class="fas fa-calendar-week me-2"></i>Doanh Thu Tuần Này</h6>
                 <h2 class="fw-bold mb-0">@PetShop.Components.Shared.Format.Vnd(revWeek)</h2>
             </div>
         </div>
         <div class="col-md-4">
-            <div class="fox-card p-4 h-100 text-white shadow-sm hover-scale" style="background: linear-gradient(135deg, #8b5cf6, #a78bfa); border-radius: 16px;">
+            <div class="metric-card fox-card p-4 h-100 shadow-sm hover-scale">
                 <h6 class="fw-bold opacity-75 mb-3 text-uppercase"><i class="fas fa-calendar-alt me-2"></i>Doanh Thu Tháng Này</h6>
                 <h2 class="fw-bold mb-0">@PetShop.Components.Shared.Format.Vnd(revMonth)</h2>
             </div>
@@ -144,6 +145,8 @@ else
 </script>
 
 <style>
+    .pet-page-heading h2{font-size:30px;letter-spacing:-.8px}.pet-page-heading p{font-size:14px!important}.revenue-kpis .metric-card{color:#263a35!important;border:1px solid #e5ebe3!important;border-radius:18px!important;background:#fff!important}.revenue-kpis .metric-card h6{color:#75867d!important;opacity:1!important;font-size:10px!important;letter-spacing:.8px}.revenue-kpis .metric-card h2{color:#263a35!important;font-size:28px}.revenue-kpis .metric-card i{color:#398675}.revenue-kpis .metric-card:nth-child(3) i{color:#b67b4b}.revenue-kpis .metric-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px #244a4010!important}.revenue-kpis .metric-card::after{content:"";display:block;width:38px;height:3px;background:#e4f2eb;border-radius:8px;margin-top:18px}
+    .revenue-kpis + .row .fox-card,.revenue-kpis ~ .row .fox-card{border:1px solid #e5ebe3!important;border-radius:18px!important}.revenue-kpis ~ .row h5{font-size:16px}.revenue-kpis ~ .row .text-primary{color:#398675!important}.revenue-kpis ~ .row .text-warning{color:#b67b4b!important}.revenue-kpis ~ .row .progress-bar.bg-info{background:#398675!important}
     .hover-scale {
         transition: transform 0.3s ease, box-shadow 0.3s ease;
     }

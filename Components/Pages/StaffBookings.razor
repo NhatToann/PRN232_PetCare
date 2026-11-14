@@ -1,3 +1,4 @@
+@inject PetShop.Services.StaffActionFeedback Feedback
 @page "/system/bookings"
 @layout PetShop_PRN222.Components.Layout.StaffWorkspaceLayout
 @rendermode InteractiveServer
@@ -192,7 +193,7 @@
 
     private async Task UpdateStatus(int id, string newStatus)
     {
-        await ReportsService.UpdateBookingStatusAsync(id, newStatus);
+        if (!await Feedback.RunAsync(() => ReportsService.UpdateBookingStatusAsync(id, newStatus), "Đã cập nhật lịch hẹn: " + newStatus)) return;
 
         // Không nhắc "cộng 250.000đ" (con số hardcode không đúng với dịch vụ thật).
         toastMsg = newStatus == "Đang tiến hành"
@@ -200,6 +201,6 @@
             : "✓ Đã đánh dấu hoàn thành lịch hẹn.";
         await LoadAndSeed();
 
-        _ = Task.Run(async () => { await Task.Delay(3000); toastMsg = ""; await InvokeAsync(StateHasChanged); });
+
     }
 }

@@ -198,7 +198,8 @@ namespace PetShop_PRN222.Components.Pages
             form.PaymentMethod,
             ItemsToCheckout.Select(item => new PetShop.Models.FrontendCheckoutItem(item.ProductId, item.Name, item.Quantity, item.Price)).ToList(),
             Navigation.ToAbsoluteUri("/checkout/invoice?payos=success").ToString(),
-            Navigation.ToAbsoluteUri("/checkout/invoice?payos=cancel").ToString());
+            Navigation.ToAbsoluteUri("/checkout/invoice?payos=cancel").ToString(),
+            form.Note);
 
         var result = await CheckoutClient.CheckoutAsync(request);
         isSubmitting = false;
