@@ -205,6 +205,18 @@ builder.Services
             .GetSection(PetShop.Services.JwtSettings.SectionName)
             .Get<PetShop.Services.JwtSettings>() ?? new PetShop.Services.JwtSettings();
 
+        // ⚠️ FALLBACK KHOÁ (15/11/2026):
+        //   Nếu `JwtSettings:Key` chưa được cấu hình ⇒ `jwtSettings.Key` rỗng ⇒
+        //   `new SymmetricSecurityKey(byte[0])` NÉM `IDX10703: key length is zero`
+        //   ⇒ **MỌI** endpoint `[Authorize]` trả 500 (kể cả `/api/auth/me`).
+        //
+        //   Vì dự án chạy 100% local nên dùng khoá phát triển ổn định (>= 32 byte
+        //   cho HS256) thay vì làm sập toàn bộ API. Nếu deploy thật ⇒ BẮT BUỘC
+        //   đặt `JwtSettings:Key` qua biến môi trường / user-secrets.
+        var signingKey = string.IsNullOrWhiteSpace(jwtSettings.Key)
+            ? "petshop-prn232-local-dev-signing-key-32bytes-min-2026"
+            : jwtSettings.Key;
+
         options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -213,7 +225,7 @@ builder.Services
             ValidAudience = jwtSettings.Audience,
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
-                System.Text.Encoding.UTF8.GetBytes(jwtSettings.Key ?? string.Empty)),
+                System.Text.Encoding.UTF8.GetBytes(signingKey)),
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1)
         };

@@ -33,4 +33,26 @@ public interface IChatClient
     Task<FrontendApiResult<ChatSendResultDto>> SendMessageAsync(
         ChatSendRequestDto request,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Lấy danh sách HỘP THƦ của khách hàng (màn hình Inbox của nhân viên).
+    /// </summary>
+    /// <param name="ct">Token huỷ.</param>
+    Task<FrontendApiResult<IReadOnlyList<ChatInboxItemDto>>> GetInboxAsync(
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Đếm tổng số tin chưa đọc trong các hộp thư (badge menu Inbox).
+    /// </summary>
+    /// <param name="ct">Token huỷ.</param>
+    Task<FrontendApiResult<int>> GetUnreadCountAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Đánh dấu đã đọc toàn bộ tin nhắn của khách trong hộp thư.
+    /// </summary>
+    /// <param name="customerId">Id khách hàng (khoá hộp thư).</param>
+    /// <param name="ct">Token huỷ.</param>
+    Task<FrontendApiResult<int>> MarkAsReadAsync(
+        int customerId,
+        CancellationToken ct = default);
 }

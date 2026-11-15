@@ -1,0 +1,272 @@
+@page "/system/inbox"
+@layout PetShop_PRN222.Components.Layout.StaffWorkspaceLayout
+@rendermode InteractiveServer
+@using PetShop.Models
+@using PetShop.Services
+@using PetShop.Interfaces
+@implements IDisposable
+
+@* ------------------------------------------------------------------
+   StaffInbox — MÀN HÌNH HỘP THƯ CHAT CHO NHÂN VIÊN.
+
+   VÌ SAO CẦN (15/11/2026):
+   Luồng chat khách ↔ nhân viên là HỘP THƯ CHUNG theo khách. Trước đây
+   nhân viên chỉ có widget chat ở góc màn hình (phải rà từng avatar khách)
+   ⇒ dễ bỏ sót khách đang chờ.
+
+   Nay có màn hình riêng:
+     - Cột trái: danh sách hộp thư (mới nhất lên đầu) + badge số tin chưa đọc.
+     - Cột phải: khung chat realtime của hộp thư đang chọn (tin nhắn của
+       MỌI nhân viên — vì hộp thư là chung).
+     - Typing indicator: biết khách đang gõ / khách biết nhân viên đang gõ.
+     - Presence: nhân viên đang mở hộp thư của khách nào.
+
+   Dữ liệu: qua IChatClient (self-HTTP tới api/chat/*) — KHÔNG inject
+   DbContext trong component (3-layer).
+   ------------------------------------------------------------------ *@
+
+<PageTitle>Hộp Thư Chat</PageTitle>
+
+@* CSS của trang này (css/template/staffInbox.css) KHÔNG khai báo ở đây.
+
+   Lý do: <PageStyles> nằm trong thân trang ⇒ nằm BÊN TRONG <RouteGuard> của
+   StaffWorkspaceLayout. Guard chỉ render con sau khi đọc được session
+   (OnAfterRenderAsync ⇒ lần render đầu chưa có) ⇒ lần đầu vào trang, CSS
+   chưa được nạp ⇒ trang hộp thư mất hoàn toàn style.
+
+   Cách đúng: khai báo CSS trong bundle của LAYOUT (CssBundle.StaffWorkspace)
+   ⇒ nạp cùng lúc với các CSS staff khác, không phụ thuộc guard. *@
+
+<div class="row mb-3">
+    <div class="col-12 d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div>
+            <h2 class="fw-bold mb-1 text-dark">Hộp Thư Chat</h2>
+            <p class="text-muted mb-0">
+                Trao đổi trực tiếp với khách hàng — tin nhắn hiển thị theo thời gian thực.
+            </p>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            @if (UnreadTotal > 0)
+            {
+                <span class="badge bg-danger rounded-pill fs-6">
+                    <i class="fas fa-envelope me-1"></i>@UnreadTotal tin chưa đọc
+                </span>
+            }
+            <span class="badge bg-light text-dark border fw-bold">
+                <i class="fas fa-circle me-1 @(RealtimeConnected ? "text-success" : "text-secondary")" style="font-size:8px;"></i>
+                @(RealtimeConnected ? "Realtime" : "Ngoại tuyến")
+            </span>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Error))
+{
+    <div class="alert alert-danger py-2">
+        <i class="fas fa-exclamation-triangle me-1"></i>@Error
+    </div>
+}
+
+<div class="staff-inbox">
+    @* ---------------------------------------------------------- CỘT TRÁI *@
+    <section class="staff-inbox__list" aria-label="Danh sách hộp thư">
+        <div class="staff-inbox__list-header">
+            <h3 class="staff-inbox__list-title">
+                Hộp thư khách hàng
+                @if (Inbox.Count > 0)
+                {
+                    <span class="text-muted fw-normal">(@Inbox.Count)</span>
+                }
+            </h3>
+            <button type="button"
+                    class="btn btn-sm btn-light border"
+                    @onclick="RefreshAsync"
+                    disabled="@Loading"
+                    title="Tải lại danh sách hộp thư">
+                <i class="fas fa-sync-alt @(Loading ? "fa-spin" : "")"></i>
+            </button>
+        </div>
+
+        <div class="staff-inbox__search">
+            <input type="text"
+                   placeholder="Tìm khách theo tên..."
+                   value="@SearchText"
+                   @oninput="OnSearchChanged"
+                   aria-label="Tìm khách theo tên" />
+        </div>
+
+        <div class="staff-inbox__items">
+            @if (Loading && Inbox.Count == 0)
+            {
+                <div class="text-center py-5 text-muted">
+                    <div class="spinner-border spinner-border-sm text-primary mb-2"></div>
+                    <div>Đang tải hộp thư…</div>
+                </div>
+            }
+            else if (FilteredInbox.Count == 0)
+            {
+                <div class="text-center py-5 text-muted px-3">
+                    <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                    <div class="fw-bold">@(Inbox.Count == 0 ? "Chưa có hộp thư nào" : "Không tìm thấy khách")</div>
+                    <small>@(Inbox.Count == 0 ? "Khi khách nhắn tin, hộp thư sẽ xuất hiện ở đây." : "Thử từ khoá khác.")</small>
+                </div>
+            }
+            else
+            {
+                @foreach (var item in FilteredInbox)
+                {
+                    var active = item.CustomerId == SelectedCustomerId;
+
+                    <button type="button"
+                            class="staff-inbox__item @(active ? "staff-inbox__item--active" : "")"
+                            @onclick="() => SelectThreadAsync(item)"
+                            aria-current="@(active ? "true" : "false")">
+                        <ChatAvatar Kind="user"
+                                    Name="@item.CustomerName"
+                                    AvatarUrl="@item.AvatarUrl"
+                                    Size="40" />
+                        <span class="staff-inbox__item-body">
+                            <span class="staff-inbox__item-top">
+                                <span class="staff-inbox__item-name">@item.CustomerName</span>
+                                <span class="staff-inbox__item-time">@FormatTime(item.LastMessageAt)</span>
+                            </span>
+                            <span class="staff-inbox__item-preview @(item.LastMessageIsMine ? "staff-inbox__item-preview--mine" : "")">
+                                @(item.LastMessageIsMine ? "Bạn: " : string.Empty)@Preview(item.LastMessage)
+                            </span>
+                            @if (item.HasUnread)
+                            {
+                                <span class="staff-inbox__badge">@(item.UnreadCount > 99 ? "99+" : item.UnreadCount.ToString())</span>
+                            }
+                        </span>
+                    </button>
+                }
+            }
+        </div>
+    </section>
+
+    @* --------------------------------------------------------- CỘT PHẢI *@
+    <section class="staff-inbox__thread" aria-label="Hộp thư đang mở">
+        @if (Selected is null)
+        {
+            <div class="staff-inbox__empty">
+                <i class="fas fa-comments"></i>
+                <strong>Chọn một hộp thư</strong>
+                <span>Chọn khách ở cột bên trái để xem và trả lời trực tiếp.</span>
+            </div>
+        }
+        else
+        {
+            <header class="staff-inbox__thread-header">
+                <ChatAvatar Kind="user"
+                            Name="@Selected.CustomerName"
+                            AvatarUrl="@Selected.AvatarUrl"
+                            Size="42" />
+                <div class="flex-grow-1 min-width-0">
+                    <h3 class="staff-inbox__thread-name">@Selected.CustomerName</h3>
+                    <div class="staff-inbox__thread-meta">
+                        @if (!string.IsNullOrWhiteSpace(Selected.Email))
+                        {
+                            <span>@Selected.Email</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(Selected.Phone))
+                        {
+                            <span> · @Selected.Phone</span>
+                        }
+                    </div>
+                </div>
+                @if (TypingIndicator is not null)
+                {
+                    @* Khách đang gõ ⇒ nhân viên biết tin đã tới mà chưa cần mở app. *@
+                    <span class="staff-inbox__presence" title="Khách đang gõ">
+                        <i class="fas fa-circle"></i> Đang gõ…
+                    </span>
+                }
+                else if (PresenceOnline)
+                {
+                    <span class="staff-inbox__presence">
+                        <i class="fas fa-circle"></i> Nhân viên đang online
+                    </span>
+                }
+            </header>
+
+            <div class="staff-inbox__messages" id="@MessagesBoxId">
+                @if (ThreadLoading)
+                {
+                    <div class="text-center py-4 text-muted">
+                        <div class="spinner-border spinner-border-sm text-primary mb-2"></div>
+                        <div>Đang tải tin nhắn…</div>
+                    </div>
+                }
+                else if (Messages.Count == 0)
+                {
+                    <div class="staff-inbox__empty">
+                        <i class="fas fa-comment-dots"></i>
+                        <strong>Chưa có tin nhắn nào</strong>
+                        <span>Hãy gửi lời chào đầu tiên cho khách.</span>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var msg in Messages)
+                    {
+                        <div class="staff-inbox__msg @(msg.IsMine ? "staff-inbox__msg--mine" : "")">
+                            <ChatAvatar Kind="@(msg.IsMine ? "user" : "staff")"
+                                        Role="@msg.SenderRole"
+                                        Name="@msg.SenderName"
+                                        Size="32" />
+                            <div class="staff-inbox__msg-body">
+                                <div class="staff-inbox__msg-meta">
+                                    <span>@(string.IsNullOrWhiteSpace(msg.SenderName) ? (msg.IsMine ? "Bạn" : "Khách hàng") : msg.SenderName)</span>
+                                    <span>· @RoleLabel(msg.SenderRole)</span>
+                                </div>
+                                <div class="staff-inbox__bubble">@msg.Content</div>
+                                <div class="staff-inbox__time">@FormatTime(msg.Timestamp)</div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (TypingIndicator is not null)
+                    {
+                        <div class="staff-inbox__msg">
+                            <div class="staff-inbox__msg-body">
+                                <div class="staff-inbox__typing">
+                                    <span class="staff-inbox__typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                                    <span>@TypingIndicator.StaffName đang gõ…</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="staff-inbox__composer">
+                <input type="text"
+                       class="staff-inbox__input"
+                       placeholder="Nhập tin nhắn cho khách…"
+                       value="@Draft"
+                       @oninput="OnInputChanged"
+                       @onkeydown="OnKeyDownAsync"
+                       maxlength="2000"
+                       disabled="@Sending" />
+                <button type="button"
+                        class="staff-inbox__send"
+                        @onclick="SendAsync"
+                        disabled="@(Sending || string.IsNullOrWhiteSpace(Draft))"
+                        aria-label="Gửi tin nhắn">
+                    @if (Sending)
+                    {
+                        <span>…</span>
+                    }
+                    else
+                    {
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M22 2L11 13"></path>
+                            <path d="M22 2l-7 20-4-9-9-4 20-7z"></path>
+                        </svg>
+                    }
+                </button>
+            </div>
+        }
+    </section>
+</div>

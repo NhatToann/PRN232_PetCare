@@ -145,6 +145,29 @@ public static class CssBundle
         "css/template/systemPage.css",
         "css/template/ordersStaff.css",
         "css/template/createProduct.css",
+
+        // Màn hình hộp thư chat (/system/inbox).
+        //
+        // ⚠️ VÌ SAO ĐỂ Ở ĐÂY (không để trong trang):
+        //   `<PageStyles>` đặt trong body của trang ⇒ bị `RouteGuard` của
+        //   `StaffWorkspaceLayout` chặn lúc prerender (chưa xác thực) ⇒ CSS
+        //   KHÔNG được nạp ⇒ trang hộp thư mất hoàn toàn style.
+        //   Đặt ở bundle của layout ⇒ luôn nạp khi vào bất kỳ trang staff.
+        "css/template/staffInbox.css",
+    };
+
+    /// <summary>
+    /// CSS riêng của màn hình HỘP THƯ CHAT cho nhân viên (<c>/system/inbox</c>).
+    ///
+    /// <para>
+    /// Vì lý do kỹ thuật ở <see cref="StaffWorkspace"/>, file này đã được gộp
+    /// vào đó. Giữ lại property riêng cho trang dùng trực tiếp nếu sau này
+    /// tách khỏi layout.
+    /// </para>
+    /// </summary>
+    public static readonly IReadOnlyList<string> StaffInbox = new[]
+    {
+        "css/template/staffInbox.css",
     };
 
     // -----------------------------------------------------------------

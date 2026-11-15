@@ -204,6 +204,37 @@ public sealed class ChatService : IChatService
             _logger.LineWarning($"[ChatService] Không đẩy được realtime chat tới {customerId}: {ex.GetType().Name} — {ex.Message}");
         }
 
+        // 3) Đẩy tới HỘP THƬ của khách (group `inbox:{customerId}`).
+        //
+        // ⚠️ VÌ SAO CẦN (15/11/2026): `SendChatAsync` đẩy tới group
+        // `customer:{customerId}` (khách thấy tin của mình) + group staff
+        // (mọi nhân viên thấy tin KHI KHÁCH gửi). Nhưng khi NHÂN VIÊN gửi
+        // ⇒ tin phải tới group `inbox:{customerId}` để các nhân viên đang mở
+        // hộp thư của khách đó thấy ngay (hộp thư chung — không riêng ai).
+        try
+        {
+            await _realtime.SendChatToInboxAsync(
+                customerId,
+                message,
+                ct,
+                row.MessageId,
+                currentKind,
+                currentUserId,
+                senderName,
+                currentKind);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LineWarning($"[ChatService] Không đẩy được chat tới hộp thư inbox:{customerId}: {ex.GetType().Name} — {ex.Message}");
+        }
+
+        // 4) Báo hộp thư thay đổi ⇒ nhân viên khác cập nhật badge số tin chưa đọc.
+        await NotifyInboxChangedSafeAsync(customerId, ct);
+
         var dto = new ChatMessageDto(
             row.MessageId,
             currentUserId,
@@ -271,6 +302,32 @@ public sealed class ChatService : IChatService
             _logger.LineWarning($"[ChatService] Không đẩy được realtime chat của khách {customerId}: {ex.GetType().Name} — {ex.Message}");
         }
 
+        // Đẩy tới HỘP THƬ của khách (group `inbox:{customerId}`) — nhân viên đang
+        // mở hộp thư này thấy tin NGAY (15/11/2026).
+        try
+        {
+            await _realtime.SendChatToInboxAsync(
+                customerId,
+                message,
+                ct,
+                row.MessageId,
+                currentKind,
+                currentUserId,
+                senderName,
+                currentKind);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LineWarning($"[ChatService] Không đẩy được chat của khách tới hộp thư inbox:{customerId}: {ex.GetType().Name} — {ex.Message}");
+        }
+
+        // Báo hộp thư thay đổi ⇒ các nhân viên khác cập nhật badge ngay.
+        await NotifyInboxChangedSafeAsync(customerId, ct);
+
         var peer = await GetPeerAsync(customerId, ChatRepositoryKind.Customer, ct)
             ?? new ChatPeerDto(customerId, $"Khách #{customerId}", ChatRepositoryKind.Customer, ChatRepositoryKind.Customer);
 
@@ -330,6 +387,106 @@ public sealed class ChatService : IChatService
     {
         var kind = (receiverKind ?? string.Empty).Trim().ToLowerInvariant();
         return kind == ChatRepositoryKind.Pool;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<ChatInboxItemDto>> GetInboxAsync(
+        int currentUserId,
+        string? currentRole,
+        CancellationToken ct = default)
+    {
+        if (currentUserId <= 0)
+        {
+            throw new ArgumentException("Không xác định được người dùng hiện tại.", nameof(currentUserId));
+        }
+
+        var kind = IChatService.NormalizeKind(currentRole);
+
+        // Chỉ NHÂN VIÊN mới có hộp thư (khách không cần danh sách hộp thư).
+        if (kind == ChatRepositoryKind.Customer)
+        {
+            return Array.Empty<ChatInboxItemDto>();
+        }
+
+        return await _repository.GetInboxAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> CountUnreadAsync(
+        int currentUserId,
+        string? currentRole,
+        CancellationToken ct = default)
+    {
+        if (currentUserId <= 0)
+        {
+            return 0;
+        }
+
+        var kind = IChatService.NormalizeKind(currentRole);
+
+        if (kind == ChatRepositoryKind.Customer)
+        {
+            return 0;
+        }
+
+        return await _repository.CountUnreadAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> MarkAsReadAsync(
+        int currentUserId,
+        string? currentRole,
+        int customerId,
+        CancellationToken ct = default)
+    {
+        if (currentUserId <= 0)
+        {
+            throw new ArgumentException("Không xác định được người dùng hiện tại.", nameof(currentUserId));
+        }
+
+        if (customerId <= 0)
+        {
+            return 0;
+        }
+
+        var kind = IChatService.NormalizeKind(currentRole);
+
+        // Khách không được đánh dấu đã đọc hộp thư của nhân viên.
+        if (kind == ChatRepositoryKind.Customer)
+        {
+            return 0;
+        }
+
+        var marked = await _repository.MarkAsReadAsync(customerId, ct);
+
+        // Báo cho các nhân viên khác biết badge đã cập nhật.
+        await NotifyInboxChangedSafeAsync(customerId, ct);
+
+        return marked;
+    }
+
+    /// <summary>
+    /// Báo "hộp thư của khách X vừa thay đổi" mà không làm hỏng luồng chính.
+    ///
+    /// <para>
+    /// Lỗi realtime phải bị nuốt (AGENTS.md §2.2) — người dùng vẫn nhận được
+    /// tin đã gửi dù hub lỗi.
+    /// </para>
+    /// </summary>
+    private async Task NotifyInboxChangedSafeAsync(int customerId, CancellationToken ct)
+    {
+        try
+        {
+            await _realtime.NotifyInboxChangedAsync(customerId, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LineWarning($"[ChatService] Không báo được thay đổi hộp thư {customerId}: {ex.GetType().Name} — {ex.Message}");
+        }
     }
 
     /// <inheritdoc />

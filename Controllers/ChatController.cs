@@ -163,6 +163,102 @@ public sealed class ChatController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Lấy danh sách HỘP THƦ của khách hàng (màn hình Inbox của nhân viên).
+    ///
+    /// <para>
+    /// <b>VÌ SAO CẦN (15/11/2026):</b> nhân viên cần danh sách hộp thư xếp theo
+    /// tin mới nhất, kèm số tin chưa đọc ⇒ không bỏ sót khách đang chờ.
+    /// </para>
+    /// </summary>
+    /// <param name="ct">Token huỷ.</param>
+    [HttpGet("inbox")]
+    [ProducesResponseType(typeof(IReadOnlyList<ChatInboxItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<IReadOnlyList<ChatInboxItemDto>>> GetInbox(CancellationToken ct)
+    {
+        var userId = ResolveUserId();
+        if (userId <= 0)
+        {
+            return Unauthorized();
+        }
+
+        try
+        {
+            var inbox = await _chatService.GetInboxAsync(userId, ResolveRole(), ct);
+            return Ok(inbox);
+        }
+        catch (Exception ex)
+        {
+            _logger.LineError(ex, "[ChatController] Không lấy được danh sách hộp thư chat");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Không lấy được danh sách hộp thư." });
+        }
+    }
+
+    /// <summary>
+    /// Đếm tổng số tin chưa đọc trong các hộp thư (badge menu Inbox).
+    /// </summary>
+    /// <param name="ct">Token huỷ.</param>
+    [HttpGet("inbox/unread-count")]
+    [ProducesResponseType(typeof(int), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<int>> GetUnreadCount(CancellationToken ct)
+    {
+        var userId = ResolveUserId();
+        if (userId <= 0)
+        {
+            return Unauthorized();
+        }
+
+        try
+        {
+            var count = await _chatService.CountUnreadAsync(userId, ResolveRole(), ct);
+            return Ok(count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LineError(ex, "[ChatController] Không đếm được số tin chat chưa đọc");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Không đếm được số tin chưa đọc." });
+        }
+    }
+
+    /// <summary>
+    /// Đánh dấu đã đọc toàn bộ tin nhắn của khách trong hộp thư.
+    /// </summary>
+    /// <param name="customerId">Id khách hàng (khoá hộp thư).</param>
+    /// <param name="ct">Token huỷ.</param>
+    [HttpPost("inbox/{customerId:int}/read")]
+    [ProducesResponseType(typeof(int), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<int>> MarkAsRead(int customerId, CancellationToken ct)
+    {
+        var userId = ResolveUserId();
+        if (userId <= 0)
+        {
+            return Unauthorized();
+        }
+
+        if (customerId <= 0)
+        {
+            return BadRequest(new { error = "customerId không hợp lệ." });
+        }
+
+        try
+        {
+            var marked = await _chatService.MarkAsReadAsync(userId, ResolveRole(), customerId, ct);
+            return Ok(marked);
+        }
+        catch (Exception ex)
+        {
+            _logger.LineError(ex, $"[ChatController] Không đánh dấu đã đọc được hộp thư của khách {customerId}");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Không đánh dấu đã đọc được." });
+        }
+    }
+
     /// <summary>Lấy id người dùng hiện tại từ claim.</summary>
     private int ResolveUserId()
     {

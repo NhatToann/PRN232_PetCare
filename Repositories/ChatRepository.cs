@@ -280,6 +280,144 @@ public sealed class ChatRepository : IChatRepository
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<ChatInboxItemDto>> GetInboxAsync(CancellationToken ct = default)
+    {
+        // MÀN HÌNH INBOX (15/11/2026).
+        //
+        // VÌ SAO CẦN:
+        //   Nhân viên cần danh sách hộp thư xếp theo tin MỚI NHẤT, kèm:
+        //     - tin nhắn cuối cùng (để nhận biết nội dung)
+        //     - số tin CHƯA ĐỌC (để biết khách nào đang chờ)
+        //   Truy vấn gộp 1 lần bằng GroupBy ⇒ không N+1.
+        //
+        //   Lưu ý `IsRead` có thể NULL (cột nullable) ⇒ dùng `?? false` trong
+        //   phép so sánh để tin NULL được coi là CHƯA ĐỌC (an toàn: không bỏ sót).
+        var summary = await _db.ChatMessages
+            .AsNoTracking()
+            .GroupBy(m => m.CustomerId)
+            .Select(g => new
+            {
+                CustomerId = g.Key,
+                LastMessageAt = g.Max(m => m.SentAt),
+                UnreadCount = g.Count(m => (m.IsRead ?? false) == false && m.SenderType != null && m.SenderType.ToLower() == "customer"),
+                LastMessage = g
+                    .OrderByDescending(m => m.SentAt)
+                    .ThenByDescending(m => m.MessageId)
+                    .Select(m => m.Message)
+                    .FirstOrDefault() ?? string.Empty,
+                LastSenderType = g
+                    .OrderByDescending(m => m.SentAt)
+                    .ThenByDescending(m => m.MessageId)
+                    .Select(m => m.SenderType)
+                    .FirstOrDefault() ?? string.Empty
+            })
+            .ToListAsync(ct);
+
+        if (summary.Count == 0)
+        {
+            return Array.Empty<ChatInboxItemDto>();
+        }
+
+        // Lấy thông tin khách (tên / avatar / email / sđt) cho các hộp thư đang có.
+        var customerIds = summary.Select(s => s.CustomerId).ToList();
+
+        var customers = await _db.Customers
+            .AsNoTracking()
+            .Where(c => customerIds.Contains(c.CustomerId))
+            .Select(c => new
+            {
+                c.CustomerId,
+                c.Name,
+                c.AvatarUrl,
+                c.Email,
+                c.Phone
+            })
+            .ToDictionaryAsync(c => c.CustomerId, ct);
+
+        return summary
+            .OrderByDescending(s => s.LastMessageAt ?? DateTime.MinValue)
+            .Select(s =>
+            {
+                customers.TryGetValue(s.CustomerId, out var customer);
+
+                var unread = s.UnreadCount;
+
+                return new ChatInboxItemDto(
+                    s.CustomerId,
+                    string.IsNullOrWhiteSpace(customer?.Name) ? $"Khách #{s.CustomerId}" : customer!.Name!,
+                    customer?.AvatarUrl,
+                    customer?.Email,
+                    customer?.Phone,
+                    s.LastMessage,
+                    s.LastMessageAt,
+                    // ⚠️ `LastMessageIsMine` = tin cuối do NHÂN VIÊN gửi (không phải khách).
+                    // Nhân viên gửi ⇒ `SenderType` = "staff" ⇒ `LastMessageIsMine = true`.
+                    // (Trước đây so sánh `== "customer"` ⇒ ĐẢO NGƯỢC ⇒ hiển thị
+                    //  sai tiền tố "Bạn: " ở danh sách hộp thư.)
+                    //
+                    // Tin cũ có `SenderType` NULL/rỗng ⇒ coi như của KHÁCH
+                    // (an toàn: không gán nhầm "Bạn: " cho tin của khách).
+                    !string.IsNullOrWhiteSpace(s.LastSenderType)
+                        && !string.Equals(s.LastSenderType, "customer", StringComparison.OrdinalIgnoreCase),
+                    unread,
+                    unread > 0);
+            })
+            .ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<int> CountUnreadAsync(CancellationToken ct = default)
+    {
+        // Tổng số tin khách gửi mà chưa đọc (badge menu Inbox).
+        //
+        // `IsRead` nullable ⇒ coi NULL là chưa đọc (an toàn, không bỏ sót).
+        return await _db.ChatMessages
+            .AsNoTracking()
+            .CountAsync(
+                m => (m.IsRead ?? false) == false
+                    && m.SenderType != null
+                    && m.SenderType.ToLower() == "customer",
+                ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> MarkAsReadAsync(int customerId, CancellationToken ct = default)
+    {
+        if (customerId <= 0)
+        {
+            return 0;
+        }
+
+        // Chỉ đánh dấu tin của KHÁCH — tin nhân viên gửi thì nhân viên đã đọc rồi.
+        //
+        // ⚠️ `.AsTracking()` BẮT BUỘC: đường ghi này set `row.IsRead = true`
+        // rồi `SaveChangesAsync`. Nếu app bật `UseQueryTrackingBehavior(NoTracking)`
+        // thì EF KHÔNG theo dõi entity ⇒ `row.IsRead = true` không được ghi vào DB
+        // ⇒ đánh dấu đã đọc "thành công" nhưng vẫn hiện là chưa đọc.
+        var rows = await _db.ChatMessages
+            .AsTracking()
+            .Where(m => m.CustomerId == customerId
+                && (m.IsRead ?? false) == false
+                && m.SenderType != null
+                && m.SenderType.ToLower() == "customer")
+            .ToListAsync(ct);
+
+        if (rows.Count == 0)
+        {
+            return 0;
+        }
+
+        foreach (var row in rows)
+        {
+            row.IsRead = true;
+        }
+
+        await _db.SaveChangesAsync(ct);
+
+        return rows.Count;
+    }
+
+    /// <inheritdoc />
     public async Task<string?> GetStaffNameAsync(int staffId, CancellationToken ct = default)
     {
         if (staffId <= 0)

@@ -3,33 +3,32 @@ using PetShop.Models;
 namespace PetShop.Interfaces;
 
 /// <summary>
-/// Truy vấn / ghi lịch sử chat 1-1 trên bảng <c>ChatMessages</c> (Q21).
+/// Truy vấn / ghi lịch sử chat trên bảng <c>ChatMessages</c> (Q21).
 ///
 /// <para>
 /// <b>Bố cục bảng <c>ChatMessages</c> (đọc từ schema thật, KHÔNG đổi schema):</b>
+/// </summary>
 /// <list type="bullet">
 ///   <item><description><c>MessageID</c> — khóa chính, identity.</description></item>
-///   <item><description><c>CustomerID</c> — id khách hàng trong luồng chat.</description></item>
-///   <item><description><c>StaffID</c> — id nhân viên trong luồng chat (nullable).</description></item>
+///   <item><description><c>CustomerID</c> — id khách hàng trong luồng chat (khoá hộp thư).</description></item>
+///   <item><description><c>StaffID</c> — id nhân viên gửi tin (nullable).</description></item>
 ///   <item><description><c>SenderType</c> — <c>customer</c> hoặc <c>staff</c> (CHECK constraint).</description></item>
 ///   <item><description><c>Message</c> — nội dung tin nhắn.</description></item>
 ///   <item><description><c>SentAt</c> — thời điểm gửi.</description></item>
 ///   <item><description><c>IsRead</c> — cờ đã đọc.</description></item>
+///   <item><description><c>SenderName</c> — tên hiển thị người gửi (thêm 15/11/2026).</description></item>
+///   <item><description><c>SenderKind</c> — nhãn loại người gửi (thêm 15/11/2026).</description></item>
 /// </list>
+///
+/// <para>
+/// <b>Khoá của một hộp thư = <c>CustomerID</c>.</b> Hai constraint FK của bảng
+/// đều ở trạng thái <c>is_disabled = 1</c> trong DB ⇒ không bị ép buộc.
 /// </para>
 ///
 /// <para>
-/// <b>Khoá của một luồng chat 1-1 = (CustomerID, StaffID).</b> Hai constraint
-/// FK của bảng đều ở trạng thái <c>is_disabled = 1</c> trong DB ⇒ không bị
-/// ép buộc, nên <c>StaffID</c> có thể mang đúng <c>Staff.staff_id</c> (không
-/// gian id của nhân viên trong ứng dụng) mà không vi phạm ràng buộc.
-/// </para>
-///
-/// <para>
-/// <b>Quy ước:</b> với luồng khách ↔ nhân viên thì <c>CustomerID</c> = id khách,
-/// <c>StaffID</c> = id nhân viên. Với luồng nhân viên ↔ khách thì <c>CustomerID</c>
-/// = id khách, <c>StaffID</c> = id nhân viên — <b>giống nhau</b> ⇒ hai chiều
-/// của cùng một cuộc hội thoại luôn đọc được lịch sử giống nhau.
+/// <b>Quy ước:</b> hộp thư chung — mọi nhân viên đều đọc/ghi cùng 1 luồng
+/// theo <c>CustomerID</c> ⇒ khách không cần chọn người nhận, nhân viên không
+/// cần "gán tay" ⇒ không ai bị bỏ rơi.
 /// </para>
 /// </summary>
 public interface IChatRepository
@@ -45,7 +44,7 @@ public interface IChatRepository
     /// </summary>
     /// <param name="currentUserId">Id của người đang đăng nhập.</param>
     /// <param name="currentUserKind">Loại người gửi: <c>customer</c> / <c>staff</c> / <c>admin</c> / <c>doctor</c>.</param>
-    /// <param name="peerId">Id của đối tác (khách hàng khi nhân viên mở hộp thư).</param>
+    /// <param name="peerId">Id đối tác (khách hàng khi nhân viên mở hộp thư).</param>
     /// <param name="peerKind">Loại đối tác.</param>
     /// <param name="take">Số tin gần nhất tối đa lấy (50–100).</param>
     /// <param name="ct">Token huỷ.</param>
@@ -65,7 +64,7 @@ public interface IChatRepository
     /// <param name="staffId">Id nhân viên gửi tin (nullable — khách gửi thì <c>null</c>).</param>
     /// <param name="senderType"><c>staff</c> hoặc <c>customer</c> (cột bị CHECK constraint giới hạn).</param>
     /// <param name="message">Nội dung tin nhắn.</param>
-    /// <param name="senderName">Tên hiển thị của người gửi (hộp thư chung — nhiều người gửi).</param>
+    /// <param name="senderName">Tên hiển thị (hộp thư chung — nhiều người gửi).</param>
     /// <param name="senderKind">Loại thật của người gửi: <c>staff</c> / <c>admin</c> / <c>doctor</c> / <c>customer</c>.</param>
     /// <param name="ct">Token huỷ.</param>
     /// <returns>Bản ghi vừa tạo (đã có <c>MessageID</c>).</returns>
@@ -109,4 +108,42 @@ public interface IChatRepository
     /// <param name="customerId">Id khách hàng.</param>
     /// <param name="ct">Token huỷ.</param>
     Task<string?> GetCustomerNameAsync(int customerId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lấy danh sách HỘP THƦ của khách hàng cho nhân viên (màn hình Inbox).
+    ///
+    /// <para>
+    /// <b>VÌ SAO CẦN (15/11/2026):</b> nhân viên cần một danh sách "hộp thư"
+    /// xếp theo tin nhắn mới nhất, kèm số tin chưa đọc, để không bỏ sót khách
+    /// đang chờ. Trước đây chỉ có danh sách peer (thiếu số tin chưa đọc + tin
+    /// cuối cùng) và không có API nào đánh dấu đã đọc.
+    /// </para>
+    /// </summary>
+    /// <param name="ct">Token huỷ.</param>
+    /// <returns>Danh sách hộp thư, mới nhất lên đầu.</returns>
+    Task<IReadOnlyList<ChatInboxItemDto>> GetInboxAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Đếm tổng số tin CHƯA ĐỌC trong tất cả hộp thư (badge trên menu Inbox).
+    ///
+    /// <para>
+    /// <b>VÌ SAO CẦN (15/11/2026):</b> nhân viên cần biết ngay còn bao nhiêu
+    /// khách đang chờ mà không cần mở màn hình Inbox.
+    /// </para>
+    /// </summary>
+    /// <param name="ct">Token huỷ.</param>
+    Task<int> CountUnreadAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Đánh dấu đã đọc toàn bộ tin nhắn của khách trong hộp thư.
+    ///
+    /// <para>
+    /// Chỉ đánh dấu tin của KHÁCH (không đánh dấu tin nhân viên gửi) — vì
+    /// nhân viên đã đọc tin mình gửi rồi.
+    /// </para>
+    /// </summary>
+    /// <param name="customerId">Id khách hàng (khoá hộp thư).</param>
+    /// <param name="ct">Token huỷ.</param>
+    /// <returns>Số tin vừa được đánh dấu đã đọc.</returns>
+    Task<int> MarkAsReadAsync(int customerId, CancellationToken ct = default);
 }

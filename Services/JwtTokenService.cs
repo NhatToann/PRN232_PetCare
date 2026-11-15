@@ -116,6 +116,16 @@ namespace PetShop.Services
             get
             {
                 var key = _settings.Key ?? string.Empty;
+
+                // ⚠️ KHÔNG có fallback ở đây (15/11/2026):
+                //   Nếu `JwtSettings:Key` rỗng ⇒ ném `InvalidOperationException`
+                //   ⇒ endpoint phát hành token trả lỗi RÕ RÀNG thay vì âm thầm
+                //   ký bằng khoá rác. Đây cũng là hành vi mà test
+                //   `JwtTokenServiceTests.CreateToken_KhoaRong_NemInvalidOperationException`
+                //   đang bảo vệ — KHÔNG được đổi.
+                //
+                //   ⇒ Muốn chạy được: đặt khoá qua user-secrets:
+                //     dotnet user-secrets set "JwtSettings:Key" "<chuỗi >= 32 ký tự>"
                 if (string.IsNullOrWhiteSpace(key))
                 {
                     throw new InvalidOperationException(

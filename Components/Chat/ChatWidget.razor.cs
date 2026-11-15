@@ -73,6 +73,17 @@ public partial class ChatWidget : ComponentBase, IAsyncDisposable
     private string draft = string.Empty;
     private string aiStatusText = "Trợ lý AI";
 
+    /// <summary>Nhân viên đang gõ (typing indicator) — 15/11/2026.</summary>
+    private ChatTypingDto? typingIndicator;
+
+    /// <summary>Trạng thái online của nhân viên trong hộp thư — 15/11/2026.</summary>
+    private ChatPresenceDto? presence;
+
+    /// <summary>
+    /// Khóa hủy typing — dùng để gửi "đã dừng gõ" sau khi ngừng nhập 2 giây.
+    /// </summary>
+    private CancellationTokenSource? typingCts;
+
     private IReadOnlyList<ChatPeerDto> peers = Array.Empty<ChatPeerDto>();
 
     /// <summary>
@@ -110,6 +121,48 @@ public partial class ChatWidget : ComponentBase, IAsyncDisposable
 
     /// <summary>Đang gửi tin hay không.</summary>
     private bool Sending => sending;
+
+    /// <summary>
+    /// Nhân viên đang gõ trong hộp thư (tên + id) — <c>null</c> nếu không ai gõ.
+    ///
+    /// <para>
+    /// <b>VÌ SAO CẦN (15/11/2026):</b> khách nhắn mà không thấy phản hồi thì hay
+    /// nhắn lại hoặc bỏ đi ⇒ tín hiệu "đang gõ" giữ khách ở lại chat.
+    /// </para>
+    /// </summary>
+    private ChatTypingDto? TypingIndicator => typingIndicator;
+
+    /// <summary>
+    /// Nhân viên đang online trong hộp thư (để khách biết có người phản hồi được).
+    /// </summary>
+    private ChatPresenceDto? Presence => presence;
+
+    /// <summary>
+    /// Nhãn hiển thị của typing indicator — đổi theo loại người đang gõ.
+    ///
+    /// <para>
+    /// Bên khách thấy "Nhân viên đang gõ…"; bên nhân viên thấy "Khách đang gõ…"
+    /// ⇒ biết khách đang chờ trả lời mà không phải mở tin nhắn ra xem.
+    /// </para>
+    /// </summary>
+    private string TypingLabel
+    {
+        get
+        {
+            var typing = typingIndicator;
+
+            if (typing is null)
+            {
+                return string.Empty;
+            }
+
+            var name = string.IsNullOrWhiteSpace(typing.StaffName)
+                ? "Người dùng"
+                : typing.StaffName;
+
+            return $"{name} đang gõ…";
+        }
+    }
 
     /// <summary>Kết nối realtime có thành công hay không (để hiển thị trạng thái).</summary>
     private bool RealtimeConnected => realtimeConnected;
@@ -232,6 +285,10 @@ public partial class ChatWidget : ComponentBase, IAsyncDisposable
         Popup.Changed += HandlePopupChanged;
         Realtime.ChatReceived += HandleChatReceived;
 
+        // ⚠️ Event MỚI (15/11/2026): typing indicator + presence.
+        Realtime.ChatTypingReceived += HandleTypingReceived;
+        Realtime.ChatPresenceReceived += HandlePresenceReceived;
+
         try { await UserSession.LoadAsync(); }
         catch (Exception ex) { Logger.LineWarning($"[ChatWidget] UserSession.LoadAsync threw: {ex.GetType().Name}"); }
 
@@ -266,7 +323,10 @@ public partial class ChatWidget : ComponentBase, IAsyncDisposable
 
         try
         {
-            await Realtime.EnsureConnectedAsync(BuildHubUrl(userId), userId);
+            // ⚠️ TRUYỀN ROLE (15/11/2026): không có `role` thì server coi mọi người
+            // là "customer" ⇒ nhân viên KHÔNG vào được group chat:staff ⇒ nhân viên
+            // không nhận được tin của khách nhắn (bug "nhân viên không thấy tin").
+            await Realtime.EnsureConnectedAsync(BuildHubUrl(userId), userId, CurrentUserRole);
             realtimeConnected = Realtime.IsConnected;
         }
         catch (Exception ex)
@@ -276,13 +336,23 @@ public partial class ChatWidget : ComponentBase, IAsyncDisposable
         }
     }
 
-    /// <summary>Dựng URL hub trên cùng host (dùng query string <c>userId</c> như LOCAL DEMO).</summary>
+    /// <summary>
+    /// Dựng URL hub trên cùng host (dùng query string <c>userId</c> + <c>role</c>
+    /// như LOCAL DEMO).
+    /// </summary>
     private string BuildHubUrl(int userId)
     {
         var baseUri = Navigation.BaseUri;
         var separator = baseUri.Contains('?', StringComparison.Ordinal) ? '&' : '?';
 
-        return $"{baseUri.TrimEnd('/')}{RealtimeHubService.HubPath}{separator}userId={userId}";
+        var url = $"{baseUri.TrimEnd('/')}{RealtimeHubService.HubPath}{separator}userId={userId}";
+
+        if (!string.IsNullOrWhiteSpace(CurrentUserRole))
+        {
+            url += $"&role={Uri.EscapeDataString(CurrentUserRole)}";
+        }
+
+        return url;
     }
 
     /// <summary>
@@ -366,6 +436,69 @@ public partial class ChatWidget : ComponentBase, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Xử lý sự kiện "nhân viên đang gõ" (15/11/2026).
+    ///
+    /// <para>
+    /// Chỉ hiện khi đang ở đúng hộp thư của khách đang gõ ⇒ khách nhìn thấy
+    /// "Nhân viên đang gõ…" ngay dưới khung chat.
+    /// </para>
+    /// </summary>
+    private void HandleTypingReceived(ChatTypingDto typing)
+    {
+        try
+        {
+            // Bên KHÁCH: typing của hộp thư của chính mình.
+            // Bên NHÂN VIÊN: typing trong hộp thư đang mở.
+            var isCurrentThread = IsStaffSide
+                ? typing.CustomerId == selectedCustomerId
+                : typing.CustomerId == CurrentUserId;
+
+            if (!isCurrentThread)
+            {
+                return;
+            }
+
+            typingIndicator = typing.IsTyping ? typing : null;
+
+            InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LineWarning($"[ChatWidget] Không xử lý được sự kiện typing realtime: {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>
+    /// Xử lý sự kiện trạng thái online của nhân viên (15/11/2026).
+    ///
+    /// <para>
+    /// Hiện ở header panel: khách biết "có nhân viên đang phản hồi" hay không.
+    /// </para>
+    /// </summary>
+    private void HandlePresenceReceived(ChatPresenceDto presenceDto)
+    {
+        try
+        {
+            var isCurrentThread = IsStaffSide
+                ? presenceDto.CustomerId == selectedCustomerId
+                : presenceDto.CustomerId == CurrentUserId;
+
+            if (!isCurrentThread)
+            {
+                return;
+            }
+
+            presence = presenceDto.IsOnline ? presenceDto : null;
+
+            InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LineWarning($"[ChatWidget] Không xử lý được sự kiện presence realtime: {ex.GetType().Name}");
+        }
+    }
+
     // ---------------------------------------------------------------------
     // Dữ liệu
     // ---------------------------------------------------------------------
@@ -397,6 +530,11 @@ public partial class ChatWidget : ComponentBase, IAsyncDisposable
             {
                 selectedPeerKey = PeerKey(peers[0]);
                 selectedCustomerId = peers[0].PeerId;
+
+                // Vào hộp thư của khách đầu tiên ⇒ nhận realtime (15/11/2026).
+                await Realtime.JoinInboxAsync(selectedCustomerId);
+                await NotifyPresenceAsync(selectedCustomerId, true);
+
                 await LoadHistoryAsync();
             }
         }
@@ -592,8 +730,24 @@ public partial class ChatWidget : ComponentBase, IAsyncDisposable
             return;
         }
 
+        // ⚠️ RỜI hộp thư cũ + báo offline (15/11/2026) ⇒ khách cũ biết nhân viên
+        // đã rời hộp thư (không phải nhân viên "biến mất" khi đang gõ).
+        var previousCustomerId = selectedCustomerId;
+
         selectedPeerKey = key;
         selectedCustomerId = peer.PeerId;
+
+        if (previousCustomerId > 0 && previousCustomerId != selectedCustomerId)
+        {
+            await Realtime.LeaveInboxAsync(previousCustomerId);
+            await NotifyPresenceAsync(previousCustomerId, false);
+        }
+
+        // VÀO hộp thư mới ⇒ nhận realtime tin của đúng khách này (kể cả tin
+        // nhân viên KHÁC gửi — hộp thư chung).
+        await Realtime.JoinInboxAsync(selectedCustomerId);
+        await NotifyPresenceAsync(selectedCustomerId, true);
+
         await LoadHistoryAsync();
         await ScrollToBottomAsync();
     }
@@ -632,6 +786,87 @@ public partial class ChatWidget : ComponentBase, IAsyncDisposable
     private void OnInputChanged(ChangeEventArgs args)
     {
         draft = args.Value?.ToString() ?? string.Empty;
+
+        // Báo "đang gõ" cho hộp thư (15/11/2026).
+        _ = NotifyTypingAsync();
+    }
+
+    /// <summary>
+    /// Báo trạng thái "đang gõ" cho hộp thư đang mở (debounce 2 giây).
+    ///
+    /// <para>
+    /// Gửi <c>true</c> ngay khi bắt đầu gõ; nếu ngừng gõ quá 2 giây thì gửi
+    /// <c>false</c> ⇒ bên kia tắt dấu "…" (không để treo vĩnh viễn).
+    /// </para>
+    /// </summary>
+    private async Task NotifyTypingAsync()
+    {
+        // Chỉ hộp thư nhân viên mới có typing indicator (AI thì không có).
+        if (!TargetIsStaff)
+        {
+            return;
+        }
+
+        // Bên NHÂN VIÊN: hộp thư của khách đang mở.
+        // Bên KHÁCH: hộp thư của chính mình (CustomerID = id của khách).
+        var customerId = IsStaffSide ? selectedCustomerId : CurrentUserId;
+
+        if (customerId <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            // Huỷ lần gửi "đã dừng gõ" của lần gõ trước (nếu có).
+            typingCts?.Cancel();
+            typingCts?.Dispose();
+            typingCts = new CancellationTokenSource();
+
+            await Realtime.SendTypingAsync(customerId, true);
+
+            var token = typingCts.Token;
+
+            _ = Task.Delay(TimeSpan.FromSeconds(2), token).ContinueWith(
+                async _ =>
+                {
+                    try
+                    {
+                        await Realtime.SendTypingAsync(customerId, false);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LineWarning($"[ChatWidget] Không gửi được trạng thái dừng gõ: {ex.GetType().Name}");
+                    }
+                },
+                TaskScheduler.Default);
+        }
+        catch (Exception ex)
+        {
+            Logger.LineWarning($"[ChatWidget] Không gửi được trạng thái đang gõ: {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>
+    /// Báo trạng thái online của nhân viên cho khách (khi mở / đóng hộp thư).
+    /// </summary>
+    /// <param name="customerId">Id khách (0 = không còn ở hộp thư nào).</param>
+    /// <param name="isOnline"><c>true</c> = đang mở hộp thư này.</param>
+    private async Task NotifyPresenceAsync(int customerId, bool isOnline)
+    {
+        if (customerId <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await Realtime.SendPresenceAsync(customerId, isOnline);
+        }
+        catch (Exception ex)
+        {
+            Logger.LineWarning($"[ChatWidget] Không gửi được trạng thái online: {ex.GetType().Name}");
+        }
     }
 
     /// <summary>Gửi tin khi nhấn Enter (Shift+Enter không gửi).</summary>
@@ -1055,6 +1290,21 @@ public partial class ChatWidget : ComponentBase, IAsyncDisposable
         UserSession.Changed -= HandleSessionChanged;
         Popup.Changed -= HandlePopupChanged;
         Realtime.ChatReceived -= HandleChatReceived;
+        Realtime.ChatTypingReceived -= HandleTypingReceived;
+        Realtime.ChatPresenceReceived -= HandlePresenceReceived;
+
+        // Huỷ timer "dừng gõ" để không gửi tín hiệu sau khi component chết.
+        try
+        {
+            typingCts?.Cancel();
+            typingCts?.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Đã dispose rồi.
+        }
+
+        typingCts = null;
     }
 
     /// <summary>

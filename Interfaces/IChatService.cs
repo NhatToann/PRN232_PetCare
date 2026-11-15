@@ -81,6 +81,47 @@ public interface IChatService
         "staff" or "manager" or "employee" => ChatRepositoryKind.Staff,
         _ => ChatRepositoryKind.Customer,
     };
+
+    /// <summary>
+    /// Lấy danh sách HỘP THƦ của khách hàng (màn hình Inbox của nhân viên).
+    ///
+    /// <para>
+    /// <b>VÌ SAO CẦN (15/11/2026):</b> nhân viên cần một danh sách hộp thư
+    /// xếp theo tin mới nhất, kèm số tin chưa đọc ⇒ không bỏ sót khách đang chờ.
+    /// </para>
+    /// </summary>
+    /// <param name="currentUserId">Id người đang đăng nhập (lấy từ claims).</param>
+    /// <param name="currentRole">Role của người đang đăng nhập (lấy từ claims).</param>
+    /// <param name="ct">Token huỷ.</param>
+    Task<IReadOnlyList<ChatInboxItemDto>> GetInboxAsync(
+        int currentUserId,
+        string? currentRole,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Đếm tổng số tin chưa đọc trong các hộp thư (badge menu Inbox).
+    /// </summary>
+    /// <param name="currentUserId">Id người đang đăng nhập (lấy từ claims).</param>
+    /// <param name="currentRole">Role của người đang đăng nhập (lấy từ claims).</param>
+    /// <param name="ct">Token huỷ.</param>
+    Task<int> CountUnreadAsync(
+        int currentUserId,
+        string? currentRole,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Đánh dấu đã đọc toàn bộ tin nhắn của khách trong hộp thư.
+    /// </summary>
+    /// <param name="currentUserId">Id người đang đăng nhập (lấy từ claims).</param>
+    /// <param name="currentRole">Role của người đang đăng nhập (lấy từ claims).</param>
+    /// <param name="customerId">Id khách hàng (khoá hộp thư).</param>
+    /// <param name="ct">Token huỷ.</param>
+    /// <returns>Số tin vừa được đánh dấu đã đọc.</returns>
+    Task<int> MarkAsReadAsync(
+        int currentUserId,
+        string? currentRole,
+        int customerId,
+        CancellationToken ct = default);
 }
 
 /// <summary>

@@ -254,6 +254,27 @@ namespace PetShop.Repositories
                 upgraded++;
             }
 
+            // ⚠️ THIẾU ADMIN — BUG ĐĂNG NHẬP QUẢN TRỊ VIÊN (15/11/2026):
+            //   Admin đăng nhập được (AuthService tra cứu bảng `admin`) nhưng khi
+            //   mật khẩu trong DB CHƯA phải hash BCrypt ⇒ `VerifyAndUpgradeAsync`
+            //   gọi hàm nâng cấp này để hash ⇒ hàm KHÔNG đụng tới bảng `admin`
+            //   ⇒ `upgraded == 0` ⇒ trả false ⇒ **đăng nhập admin LUÔN 401**.
+            //
+            //   Thêm nhánh Admin ⇒ đăng nhập được + tự nâng cấp hash.
+            //
+            //   Lưu ý: `admin` không có cột `email` cho tất cả tài khoản cũ
+            //   (admin1/admin2 có email rỗng) ⇒ tra cứu theo `username` nữa.
+            var admin = await _db.Admins
+                .AsTracking()
+                .FirstOrDefaultAsync(
+                x => (x.Email ?? string.Empty).Trim().ToLower() == normalizedEmail
+                    || x.Username.Trim().ToLower() == normalizedEmail, ct);
+            if (admin is not null)
+            {
+                admin.Password = newPasswordHash;
+                upgraded++;
+            }
+
             if (upgraded > 0)
             {
                 await _db.SaveChangesAsync(ct);

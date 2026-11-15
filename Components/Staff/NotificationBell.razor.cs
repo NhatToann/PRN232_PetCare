@@ -133,7 +133,13 @@ public partial class NotificationBell : ComponentBase, IAsyncDisposable
                 return;
             }
 
-            await Realtime.EnsureConnectedAsync(BuildHubUrl(staffId), staffId);
+            // ⚠️ TRUYỀN ROLE (15/11/2026): không có `role` thì server coi mọi người
+            // là "customer" ⇒ nhân viên KHÔNG vào được group chat:staff ⇒ nhân viên
+            // không nhận được tin của khách nhắn (bug "nhân viên không thấy tin").
+            await Realtime.EnsureConnectedAsync(
+                BuildHubUrl(staffId),
+                staffId,
+                CurrentRole);
         }
         catch (Exception ex)
         {
@@ -142,12 +148,18 @@ public partial class NotificationBell : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
+    /// Loại người dùng hiện tại (staff / admin / doctor / customer).
+    /// </summary>
+    private string CurrentRole => (UserSession.CurrentUser?.Role ?? string.Empty).Trim().ToLowerInvariant();
+
+    /// <summary>
     /// Dựng URL hub trên cùng host.
     ///
     /// <para>
-    /// Dùng query string <c>userId</c> vì client Blazor (circuit server-side) không
-    /// gửi header session tới kết nối WebSocket; đây là chế độ LOCAL DEMO giống
-    /// <c>SessionHeaderAuthenticationHandler</c> (không phải cơ chế bảo mật production).
+    /// Dùng query string <c>userId</c> + <c>role</c> vì client Blazor (circuit
+    /// server-side) không gửi header session tới kết nối WebSocket; đây là chế độ
+    /// LOCAL DEMO giống <c>SessionHeaderAuthenticationHandler</c> (không phải cơ
+    /// chế bảo mật production).
     /// </para>
     /// </summary>
     private string BuildHubUrl(int staffId)
@@ -155,7 +167,14 @@ public partial class NotificationBell : ComponentBase, IAsyncDisposable
         var baseUri = Navigation.BaseUri;
         var separator = baseUri.Contains('?', StringComparison.Ordinal) ? '&' : '?';
 
-        return $"{baseUri.TrimEnd('/')}{RealtimeHubService.HubPath}{separator}userId={staffId}";
+        var url = $"{baseUri.TrimEnd('/')}{RealtimeHubService.HubPath}{separator}userId={staffId}";
+
+        if (!string.IsNullOrWhiteSpace(CurrentRole))
+        {
+            url += $"&role={Uri.EscapeDataString(CurrentRole)}";
+        }
+
+        return url;
     }
 
     /// <summary>

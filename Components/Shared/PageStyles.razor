@@ -45,9 +45,12 @@
             .Where(f => !string.IsNullOrWhiteSpace(f))
             .Distinct();
 
-    private static string VersionedFile(string file) => file is "css/template/chatWidget.css"
-        ? $"{file}?v=chat-redesign-20261113-1"
-        : file;
+    private static string VersionedFile(string file) => file switch
+    {
+        "css/template/chatWidget.css" => $"{file}?v=chat-typing-20261115-1",
+        "css/template/staffInbox.css" => $"{file}?v=inbox-20261115-1",
+        _ => file
+    };
 
     protected override void OnParametersSet()
     {

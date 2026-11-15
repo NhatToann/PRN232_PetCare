@@ -64,6 +64,28 @@ public sealed class ChatClient : IChatClient
         CancellationToken ct = default) =>
         SendJsonAsync<ChatSendResultDto>(HttpMethod.Post, "api/chat/send", request, ct);
 
+    /// <inheritdoc />
+    public Task<FrontendApiResult<IReadOnlyList<ChatInboxItemDto>>> GetInboxAsync(
+        CancellationToken ct = default) =>
+        GetJsonAsync<IReadOnlyList<ChatInboxItemDto>>(
+            "api/chat/inbox",
+            Array.Empty<ChatInboxItemDto>(),
+            ct);
+
+    /// <inheritdoc />
+    public Task<FrontendApiResult<int>> GetUnreadCountAsync(CancellationToken ct = default) =>
+        GetJsonAsync<int>("api/chat/inbox/unread-count", 0, ct);
+
+    /// <inheritdoc />
+    public Task<FrontendApiResult<int>> MarkAsReadAsync(
+        int customerId,
+        CancellationToken ct = default) =>
+        SendJsonAsync<int>(
+            HttpMethod.Post,
+            $"api/chat/inbox/{customerId}/read",
+            new { customerId },
+            ct);
+
     /// <summary>
     /// Tạo request có gắn header phiên đăng nhập
     /// (<c>X-User-Id</c> / <c>X-Customer-Id</c> / <c>X-User-Role</c>).

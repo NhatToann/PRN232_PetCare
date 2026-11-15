@@ -63,6 +63,14 @@
                     <span class="chat-panel-status">
                         @(RealtimeConnected ? "● trực tuyến" : "● ngoại tuyến")
                     </span>
+                    @if (Presence is not null)
+                    {
+                        @* Nhân viên đang online trong hộp thư (15/11/2026) ⇒ khách
+                           biết "có người phản hồi được" trước khi hỏi. *@
+                        <span class="chat-panel-presence" title="Nhân viên đang online">
+                            <i class="fas fa-circle"></i> @Presence.StaffName đang online
+                        </span>
+                    }
                 </div>
                 <button type="button" class="chat-panel-close" @onclick="TogglePanel" aria-label="Đóng hộp thoại">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -219,6 +227,23 @@
                             <ChatAvatar Kind="ai" Size="32" />
                             <div class="chat-row__body">
                                 <div class="chat-bubble chat-bubble--typing">Đang suy nghĩ…</div>
+                            </div>
+                        </div>
+                    }
+                    else if (TypingIndicator is not null)
+                    {
+                        @* Typing indicator (15/11/2026): bên kia đang gõ ⇒ hiện
+                           "… đang gõ" để khách biết tin đã được nhận. *@
+                        <div class="chat-row chat-row--theirs chat-row--staff">
+                            <ChatAvatar Kind="staff"
+                                        Role="@TypingIndicator.SenderKind"
+                                        Name="@TypingIndicator.StaffName"
+                                        Size="32" />
+                            <div class="chat-row__body">
+                                <div class="chat-bubble chat-bubble--typing">
+                                    <span class="chat-typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                                    @TypingLabel
+                                </div>
                             </div>
                         </div>
                     }

@@ -7,6 +7,8 @@
 @inject IStaffProfileService ProfileService
 @inject PetShop.Services.StaffRefreshSignal RefreshSignal
 @inject ILogger<StaffWorkspaceLayout> Logger
+@inject PetShop.Interfaces.IChatClient ChatClient
+@inject PetShop.Services.RealtimeHubService Realtime
 @implements IDisposable
 
 @* ------------------------------------------------------------------
@@ -52,6 +54,17 @@
 
             <div class="menu-title mt-4">DỊCH VỤ SPA</div>
             <NavLink href="/system/bookings" class="menu-item"><i class="fas fa-calendar-check"></i> Lịch hẹn Spa</NavLink>
+
+            <div class="menu-title mt-4">KHÁCH HÀNG</div>
+            @* HỘP THƯ CHAT (15/11/2026): badge = tổng số tin khách chưa đọc.
+               Nhân viên không mở widget chat cũng thấy khách đang chờ ⇒ không bỏ sót. *@
+            <NavLink href="/system/inbox" class="menu-item">
+                <i class="fas fa-comments"></i> Hộp thư chat
+                @if (InboxUnreadCount > 0)
+                {
+                    <span class="menu-badge">@(InboxUnreadCount > 99 ? "99+" : InboxUnreadCount.ToString())</span>
+                }
+            </NavLink>
 
             <div class="menu-title mt-4">CỬA HÀNG & KHO</div>
             <NavLink href="/products/list" class="menu-item"><i class="fas fa-box"></i> Danh sách sản phẩm</NavLink>
@@ -209,6 +222,22 @@
             color: #64748b;
         }
 
+        /* Badge số tin chưa đọc trên menu "Hộp thư chat" (15/11/2026). */
+        .menu-item .menu-badge {
+            margin-left: auto;
+            min-width: 20px;
+            height: 20px;
+            padding: 0 6px;
+            border-radius: 999px;
+            background-color: #ef4444;
+            color: #ffffff;
+            font-size: 0.7rem;
+            font-weight: 700;
+            line-height: 20px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
         .menu-item:hover i, .menu-item.active i {
             color: var(--fox-purple);
         }
@@ -273,6 +302,20 @@
     private string currentMenu = "Bảng điều khiển";
     private int countdown = 30;
 
+    /// <summary>
+    /// Tổng số tin chat chưa đọc (badge menu "Hộp thư chat").
+    ///
+    /// <para>
+    /// Nhân viên KHÔNG mở widget chat vẫn phải biết khách nào đang chờ ⇒ badge
+    /// trên sidebar là tín hiệu duy nhất. Cập nhật realtime qua event
+    /// <c>ChatInboxChanged</c> (mỗi khi có tin mới / đánh dấu đã đọc).
+    /// </para>
+    /// </summary>
+    private int inboxUnreadCount;
+
+    /// <summary>Tổng số tin chưa đọc (dùng trong markup).</summary>
+    private int InboxUnreadCount => inboxUnreadCount;
+
     // Dùng System.Threading.Timer (thread pool) thay vì Timer của ASP.NET Core.
     // LƯU Ý: timer của ASP.NET Core KHÔNG được dùng cho việc lặp vô hạn —
     // nó sẽ bị gom cùng một CancellationToken với request, nên timer bị hủy
@@ -296,6 +339,9 @@
 
         UpdateBreadcrumb(Navigation.Uri);
         Navigation.LocationChanged += handler;
+
+        // Badge hộp thư chat — cập nhật realtime (15/11/2026).
+        Realtime.ChatInboxChanged += HandleInboxChanged;
 
         _timer = new System.Threading.Timer(
             _ => TickCountdown(),
@@ -321,6 +367,41 @@
         {
             Logger.LineWarning($"[StaffWorkspaceLayout] Không tải được tên nhân viên: {ex.GetType().Name}");
         }
+
+        await LoadInboxUnreadAsync();
+    }
+
+    /// <summary>
+    /// Tải tổng số tin chat chưa đọc (badge menu "Hộp thư chat").
+    /// </summary>
+    private async Task LoadInboxUnreadAsync()
+    {
+        try
+        {
+            var result = await ChatClient.GetUnreadCountAsync();
+
+            if (result.IsSuccess)
+            {
+                inboxUnreadCount = result.Data;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LineWarning($"[StaffWorkspaceLayout] Không tải được số tin chat chưa đọc: {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>
+    /// Hộp thư vừa thay đổi ⇒ làm mới badge số tin chưa đọc.
+    /// </summary>
+    private void HandleInboxChanged(PetShop.Models.ChatInboxChangedDto changed)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadInboxUnreadAsync();
+            StateHasChanged();
+        });
     }
 
     private void TickCountdown()
@@ -389,6 +470,7 @@
         else if (url.Contains("/products/list")) currentMenu = "Danh sách sản phẩm";
         else if (url.Contains("/products/inventory")) currentMenu = "Quản lý tồn kho";
         else if (url.Contains("/system/schedule")) currentMenu = "Lịch trực cá nhân";
+        else if (url.Contains("/system/inbox")) currentMenu = "Hộp thư chat";
         else if (url.Contains("/system/profile")) currentMenu = "Hồ sơ của tôi";
         else currentMenu = "Bảng điều khiển";
     }
@@ -403,5 +485,7 @@
             Navigation.LocationChanged -= _locationChangedHandler;
             _locationChangedHandler = null;
         }
+
+        Realtime.ChatInboxChanged -= HandleInboxChanged;
     }
 }
