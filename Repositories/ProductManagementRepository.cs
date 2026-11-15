@@ -138,18 +138,12 @@ namespace PetShop.Repositories
         {
             await using var context = await _factory.CreateDbContextAsync(ct);
 
-            var product = await context.Products
-                .AsTracking()
-                .FirstOrDefaultAsync(p => p.ProductId == productId, ct);
-
-            if (product is null)
-            {
-                return false;
-            }
-
-            product.StockQuantity += quantity;
-            await context.SaveChangesAsync(ct);
-            return true;
+            if (quantity <= 0) return false;
+            // Cộng ngay trong DB để không ghi đè số lượng khi có thao tác nhập/xuất đồng thời.
+            var changed = await context.Products
+                .Where(p => p.ProductId == productId && !p.IsDeleted && p.StockQuantity <= int.MaxValue - quantity)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.StockQuantity, p => p.StockQuantity + quantity), ct);
+            return changed == 1;
         }
     }
 }

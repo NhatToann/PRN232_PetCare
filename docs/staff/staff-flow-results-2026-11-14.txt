@@ -1,0 +1,71 @@
+PASS Đăng nhập customer5@example.com
+PASS Đăng nhập vana@petshop.com
+PASS Đăng nhập leb@petshop.com
+PASS Định danh staff theo email
+PASS Đọc hồ sơ đúng người
+PASS Lưu hồ sơ giữ nguyên giá trị
+QA ProductId=48
+PASS Sửa sản phẩm
+PASS Nhập kho +1
+PASS Kiểm DB tồn=11
+PASS Nhập kho +2
+PASS Kiểm DB tồn=13
+PASS Nhập kho +3
+PASS Kiểm DB tồn=16
+PASS Nhập kho +5
+PASS Kiểm DB tồn=21
+PASS Nhập kho +10
+PASS Kiểm DB tồn=31
+PASS Nhập kho +100
+PASS Kiểm DB tồn=131
+PASS Chặn nhập 0
+PASS Chặn nhập âm
+PASS Nhập đồng thời không mất cập nhật
+PASS Khách tạo đơn COD
+QA OrderId=1973124199
+PASS Đơn mới xuất hiện danh sách staff
+PASS Chi tiết: khách, địa chỉ, note và giá từ DB
+PASS Chuyển đơn Đang đóng gói
+PASS Chuyển đơn Đang giao hàng
+PASS Chuyển đơn Hoàn thành
+PASS Trừ kho đúng 2
+PASS Hoàn thành lặp an toàn
+PASS Chặn quay trạng thái lùi
+PASS Khách tạo đơn COD
+PASS Không ghi chú lưu null
+PASS Đóng gói đơn hủy
+PASS Đóng gói lặp an toàn
+PASS Hủy đơn hoàn kho
+PASS Hủy lặp an toàn
+PASS Kho không trừ/hoàn hai lần
+PASS Khách tạo đơn COD
+PASS Thiếu kho không xác nhận
+PASS Thiếu kho giữ trạng thái đơn
+PASS Hủy đơn trước trừ kho
+PASS Xác nhận trạng thái seed lỗi mã hóa
+PASS Hủy đơn seed lỗi mã hóa
+PASS Khách đặt dịch vụ tiền mặt
+PASS Tiền mặt chưa thu không báo paid
+QA BookingId=1392
+PASS Lịch sử khách thấy lịch mới
+PASS Staff thấy lịch mới
+PASS Staff lịch Đang tiến hành
+PASS Staff lịch Hoàn thành
+PASS Gửi đổi ca: {"status":"success","message":"Gửi yêu cầu đổi ca thành công."}
+PASS Từ chối đổi ca
+PASS Gửi đổi ca: {"status":"success","message":"Gửi yêu cầu đổi ca thành công."}
+PASS Người gửi hủy đổi ca
+PASS Gửi đổi ca: {"status":"success","message":"Gửi yêu cầu đổi ca thành công."}
+PASS Người khác không duyệt được
+PASS Chấp nhận đổi ca
+PASS DB hoán đổi đúng chủ ca
+PASS Chặn check-in ca tương lai
+PASS Chặn check-in quá giờ ca
+PASS Check-in ca hiện tại thành công
+PASS Check-in lặp trả thành công an toàn
+PASS Chỉ một bản ghi công và đánh dấu đi muộn
+PASS Xóa mềm sản phẩm
+PASS Ẩn sản phẩm đã xóa
+PASS Khôi phục sản phẩm
+PASS Doanh thu và dashboard đọc DB
+TOTAL 66 PASS

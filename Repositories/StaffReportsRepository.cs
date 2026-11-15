@@ -38,6 +38,8 @@ namespace PetShop.Repositories
             await using var context = await _factory.CreateDbContextAsync(ct);
             return await context.Orders
                 .AsNoTracking()
+                .OrderByDescending(o => o.OrderDate)
+                .ThenByDescending(o => o.OrderId)
                 .Take(take)
                 .ToListAsync(ct);
         }
@@ -62,8 +64,10 @@ namespace PetShop.Repositories
         public async Task<bool> UpdateOrderStatusAsync(int orderId, string status, CancellationToken ct = default)
         {
             await using var context = await _factory.CreateDbContextAsync(ct);
+            await using var transaction = await context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
             var order = await context.Orders
                 .AsTracking()
+                .Include(o => o.OrderDetails)
                 .FirstOrDefaultAsync(o => o.OrderId == orderId, ct);
 
             if (order is null)
@@ -71,8 +75,39 @@ namespace PetShop.Repositories
                 return false;
             }
 
+            order.Status = PetShop.Services.OrderStatusText.Normalize(order.Status);
+            status = PetShop.Services.OrderStatusText.Normalize(status);
+            if (order.Status == status) return true;
+            var valid = (order.Status, status) switch
+            {
+                ("Chờ xác nhận", "Đang đóng gói" or "Đã hủy") => true,
+                ("Đang đóng gói" or "Đang xử lý", "Đang giao hàng" or "Đã hủy") => true,
+                ("Đang giao hàng" or "Chờ giao hàng", "Hoàn thành") => true,
+                _ => false
+            };
+            if (!valid) return false;
+            if (status == "Đã hủy" && order.Status is "Đang đóng gói" or "Đang xử lý")
+            {
+                foreach (var detail in order.OrderDetails.Where(d => d.ProductId != null))
+                    await context.Products.Where(p => p.ProductId == detail.ProductId)
+                        .ExecuteUpdateAsync(s => s.SetProperty(p => p.StockQuantity, p => p.StockQuantity + (detail.Quantity ?? 1)), ct);
+            }
+
+            // Luồng staff phải giữ cùng quy tắc trừ kho như API xác nhận đơn.
+            if (order.Status == "Chờ xác nhận" && status == "Đang đóng gói")
+            {
+                foreach (var detail in order.OrderDetails.Where(d => d.ProductId != null))
+                {
+                    var quantity = detail.Quantity ?? 1;
+                    var changed = await context.Products
+                        .Where(p => p.ProductId == detail.ProductId && p.StockQuantity >= quantity)
+                        .ExecuteUpdateAsync(s => s.SetProperty(p => p.StockQuantity, p => p.StockQuantity - quantity), ct);
+                    if (changed != 1) return false;
+                }
+            }
             order.Status = status;
             await context.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
             return true;
         }
 

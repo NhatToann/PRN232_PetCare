@@ -29,7 +29,8 @@ public sealed record FrontendCheckoutRequest(
     string PaymentMethod,
     List<FrontendCheckoutItem> Items,
     string? ReturnUrl,
-    string? CancelUrl);
+    string? CancelUrl,
+    string? Note = null);
 
 public sealed record FrontendCheckoutResponse(string PaymentMethod, string? RedirectUrl, string OrderCode, int OrderId);
 

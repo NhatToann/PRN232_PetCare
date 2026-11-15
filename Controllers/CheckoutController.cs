@@ -167,7 +167,8 @@ namespace PetShop.Controllers
                     PaymentStatus = isPayOs ? "pending" : "COD",
                     CustomerId = customerId,
                     PaymentMethod = request.PaymentMethod,
-                    ShippingAddress = request.Address
+                    ShippingAddress = request.Address,
+                    CustomerNote = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim()
                 };
 
                 _db.Orders.Add(order);
@@ -293,7 +294,8 @@ namespace PetShop.Controllers
         [MinLength(1, ErrorMessage = "Giỏ hàng không được để trống.")]
         List<CheckoutItem> Items,
         string? ReturnUrl,
-        string? CancelUrl);
+        string? CancelUrl,
+        [StringLength(500, ErrorMessage = "Ghi chú không được vượt quá 500 ký tự.")] string? Note = null);
 
     public sealed record CheckoutResponse(string PaymentMethod, string? RedirectUrl, string OrderCode, int OrderId);
 }

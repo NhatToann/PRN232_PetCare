@@ -311,6 +311,8 @@ builder.Services.AddScoped<IStaffRepository, StaffRepository>();
 builder.Services.AddScoped<IStaffService, StaffService>();
 builder.Services.AddScoped<IStaffDashboardService, StaffDashboardService>();
 builder.Services.AddScoped<IStaffProfileService, StaffProfileService>();
+builder.Services.AddScoped<StaffActionFeedback>();
+builder.Services.AddScoped<StaffOrderDetailService>();
 // LS-13: 3-layer cho màn hình quản lý sản phẩm + báo cáo/dashboard nhân viên.
 builder.Services.AddScoped<IProductManagementRepository, ProductManagementRepository>();
 builder.Services.AddScoped<IProductManagementService, ProductManagementService>();

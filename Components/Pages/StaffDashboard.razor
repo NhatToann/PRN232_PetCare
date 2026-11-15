@@ -4,269 +4,48 @@
 @using PetShop.Models
 @using PetShop.Services
 @inject IStaffReportsService ReportsService
+@inject IProductManagementService ProductsService
+@inject UserSessionService Session
 @inject PetShop.Services.StaffRefreshSignal RefreshSignal
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
+@inject ILogger<StaffDashboard> Logger
 @implements IDisposable
-
-<PageTitle>Bảng Điều Khiển - Nhân Viên</PageTitle>
-
-<div class="d-flex justify-content-between align-items-center mb-4 fade-in">
-    <div>
-        <h2 class="fw-bold mb-1 text-dark">Bảng Điều Khiển</h2>
-        <p class="text-muted fs-5">Cập nhật nhanh tình hình hoạt động ngày hôm nay</p>
-    </div>
+<PageTitle>Tổng quan cửa hàng · PET STAFF</PageTitle>
+<link rel="stylesheet" href="css/staff-dashboard.css" />
+<div class="pet-dashboard">
+<section class="welcome-panel">
+ <div><span class="eyebrow">MỘT NGÀY CHĂM SÓC THẬT TỐT</span><h1>@(DateTime.Now.Hour < 12 ? "Chào buổi sáng" : DateTime.Now.Hour < 18 ? "Chào buổi chiều" : "Chào buổi tối"), @(Session.CurrentUser?.Name ?? "bạn")!</h1><p>Cùng xem tình hình hoạt động của cửa hàng hôm nay.</p><div class="welcome-actions"><a href="/system/bookings">Lịch hẹn Spa <i class="fas fa-arrow-right"></i></a><a href="/system/orders">Xử lý đơn hàng</a></div></div>
+ <div class="welcome-date"><i class="fas fa-paw"></i><span>@DateTime.Now.ToString("dd/MM/yyyy")</span><small>Chăm chút từng người bạn nhỏ</small></div>
+</section>
+@if (isLoading) { <div class="dashboard-empty" role="status"><div class="spinner-border"></div><p>Đang tải tình hình cửa hàng…</p></div> }
+else if (!string.IsNullOrEmpty(loadError)) { <div class="alert alert-danger" role="alert">@loadError <button class="btn btn-sm btn-outline-danger" @onclick="LoadDashboardAsync">Thử lại</button></div> }
+else {
+<div class="kpi-grid">
+ @foreach (var k in new[] { ("Doanh thu hôm nay", PetShop.Components.Shared.Format.Vnd(revToday), "fa-wallet", "/revenue"), ("Doanh thu tuần này", PetShop.Components.Shared.Format.Vnd(revWeek), "fa-chart-line", "/revenue"), ("Đơn hàng cần xử lý", pendingOrders.ToString(), "fa-box-open", "/system/orders"), ("Lịch Spa hôm nay", todaySpaCount.ToString(), "fa-bath", "/system/bookings"), ("Sản phẩm sắp hết", lowStockCount.ToString(), "fa-boxes-stacked", "/products/inventory"), ("Tổng khách hàng", totalCustomers.ToString(), "fa-users", "") }) {
+ <article class="metric-card"><div class="metric-heading"><span>@k.Item1</span><i class="fas @k.Item3"></i></div><strong>@k.Item2</strong>@if(k.Item4.Length>0){<a href="@k.Item4">Xem chi tiết <span>↗</span></a>}else{<small>Khách hàng trong hệ thống</small>}</article>
+ }
+</div>
+<div class="work-grid">
+<section class="dashboard-panel"><div class="panel-heading"><div><span class="eyebrow">CHĂM SÓC THÚ CƯNG</span><h2>Lịch Spa sắp tới</h2></div><a href="/system/bookings">Xem tất cả ↗</a></div>
+@if(nextTasks.Count==0){<div class="dashboard-empty"><i class="fas fa-paw"></i><h3>Chưa có lịch hẹn sắp tới</h3><p>Lịch mới sẽ xuất hiện tại đây khi khách đặt dịch vụ.</p></div>}
+@foreach(var t in nextTasks){<div class="task-row"><time>@t.Time</time><div><strong>@t.CustomerName</strong><p>@t.PetName · @t.PetBreed</p><small>@t.ServiceName</small></div><span class="soft-status">@t.Status</span></div>}
+</section>
+<section class="dashboard-panel"><div class="panel-heading"><div><span class="eyebrow">CÔNG VIỆC ƯU TIÊN</span><h2>Đơn hàng cần xử lý</h2></div><a href="/system/orders">Xem tất cả ↗</a></div>
+@if(pendingList.Count==0){<div class="dashboard-empty"><i class="fas fa-box-open"></i><h3>Đã xử lý hết đơn hàng</h3><p>Không có đơn hàng đang chờ xử lý.</p></div>}
+@foreach(var o in pendingList){<a class="order-row" href="/system/orders"><div><strong>#@o.OrderId</strong><p>@o.CustomerName</p><small>@o.OrderDate.ToString("dd/MM/yyyy HH:mm")</small></div><div><strong>@PetShop.Components.Shared.Format.Vnd(o.TotalAmount)</strong><p><span class="soft-status">@o.Status</span></p></div></a>}
+</section></div>
+<div class="analytics-grid"><section class="dashboard-panel"><div class="panel-heading"><div><span class="eyebrow">HIỆU QUẢ KINH DOANH</span><h2>Doanh thu 7 ngày</h2></div><a href="/revenue">Báo cáo ↗</a></div><div class="chart-frame"><canvas id="dashboardLineChart" aria-label="Biểu đồ doanh thu 7 ngày" role="img"></canvas></div></section><section class="dashboard-panel"><div class="panel-heading"><div><span class="eyebrow">TỔNG QUAN ĐƠN HÀNG</span><h2>Tỷ trọng trạng thái</h2></div></div>@if(completedOrders+pendingOrders+cancelledOrders==0){<div class="dashboard-empty">Chưa có dữ liệu đơn hàng.</div>}<div class="chart-frame"><canvas id="dashboardDonutChart" aria-label="Tỷ trọng trạng thái đơn hàng" role="img"></canvas></div><div class="chart-legend"><span>● Hoàn thành @completedOrders</span><span>● Cần xử lý @pendingOrders</span><span>● Đã hủy @cancelledOrders</span></div></section></div>
+<section class="dashboard-panel stock-panel"><div class="panel-heading"><div><span class="eyebrow">CHÚ Ý TỒN KHO</span><h2>Sản phẩm sắp hết hàng</h2></div><a href="/products/inventory">Quản lý kho ↗</a></div>@if(stockList.Count==0){<p class="stock-empty">Tồn kho đang ổn định. Không có sản phẩm nào dưới ngưỡng 5.</p>}<div class="stock-grid">@foreach(var p in stockList){<a href="/products/inventory" class="stock-item"><span class="stock-icon"><i class="fas fa-box"></i></span><div><strong>@p.Name</strong><small>Còn @p.StockQuantity sản phẩm</small></div></a>}</div></section>
+}
 </div>
 
-@if (isLoading)
-{
-    <div class="text-center py-5"><div class="spinner-border text-primary" style="width: 3rem; height: 3rem;"></div></div>
-}
-else
-{
-    <!-- 6 THẺ KPI -->
-    <div class="row g-4 mb-4 fade-in-up">
-        <div class="col-xl-4 col-md-6" @onclick='() => Navigation.NavigateTo("/revenue")'>
-            <div class="fox-card p-4 h-100 kpi-card border-start border-4 border-primary shadow-sm bg-white rounded-4">
-                <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div class="text-muted fw-bold text-uppercase" style="font-size: 0.8rem;">Doanh Thu Hôm Nay</div>
-                    <div class="icon-box bg-primary-subtle text-primary"><i class="fas fa-wallet"></i></div>
-                </div>
-                <h2 class="fw-bold text-dark mb-1">@PetShop.Components.Shared.Format.Vnd(revToday)</h2>
-            </div>
-        </div>
-
-        <div class="col-xl-4 col-md-6" @onclick='() => Navigation.NavigateTo("/revenue")'>
-            <div class="fox-card p-4 h-100 kpi-card border-start border-4 border-success shadow-sm bg-white rounded-4">
-                <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div class="text-muted fw-bold text-uppercase" style="font-size: 0.8rem;">Doanh Thu Tuần Này</div>
-                    <div class="icon-box bg-success-subtle text-success"><i class="fas fa-chart-line"></i></div>
-                </div>
-                <h2 class="fw-bold text-dark mb-1">@PetShop.Components.Shared.Format.Vnd(revWeek)</h2>
-            </div>
-        </div>
-
-        <div class="col-xl-4 col-md-6" @onclick='() => Navigation.NavigateTo("/system/orders")'>
-            <div class="fox-card p-4 h-100 kpi-card border-start border-4 border-warning shadow-sm bg-white rounded-4">
-                <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div class="text-muted fw-bold text-uppercase" style="font-size: 0.8rem;">Đơn Hàng Cần Xử Lý</div>
-                    <div class="icon-box bg-warning-subtle text-warning"><i class="fas fa-box-open"></i></div>
-                </div>
-                <h2 class="fw-bold text-dark mb-1">@pendingOrders <span class="fs-5 text-muted">Đơn</span></h2>
-            </div>
-        </div>
-
-        <div class="col-xl-4 col-md-6" @onclick='() => Navigation.NavigateTo("/system/bookings")'>
-            <div class="fox-card p-4 h-100 kpi-card border-start border-4 border-info shadow-sm bg-white rounded-4">
-                <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div class="text-muted fw-bold text-uppercase" style="font-size: 0.8rem;">Lịch Spa Hôm Nay</div>
-                    <div class="icon-box bg-info-subtle text-info"><i class="fas fa-bath"></i></div>
-                </div>
-                <h2 class="fw-bold text-dark mb-1">@todaySpaCount <span class="fs-5 text-muted">Lịch hẹn</span></h2>
-            </div>
-        </div>
-
-        <div class="col-xl-4 col-md-6" @onclick='() => Navigation.NavigateTo("/products/inventory")'>
-            <div class="fox-card p-4 h-100 kpi-card border-start border-4 border-danger shadow-sm bg-white rounded-4">
-                <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div class="text-muted fw-bold text-uppercase" style="font-size: 0.8rem;">Sắp Hết Hàng</div>
-                    <div class="icon-box bg-danger-subtle text-danger"><i class="fas fa-exclamation-triangle"></i></div>
-                </div>
-                <h2 class="fw-bold text-dark mb-1">@lowStockCount <span class="fs-5 text-muted">Sản phẩm</span></h2>
-            </div>
-        </div>
-
-        <div class="col-xl-4 col-md-6">
-            <div class="fox-card p-4 h-100 kpi-card border-start border-4 border-purple shadow-sm bg-white rounded-4">
-                <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div class="text-muted fw-bold text-uppercase" style="font-size: 0.8rem;">Tổng Khách Hàng</div>
-                    <div class="icon-box" style="background-color: #f0eaff; color: #6c5ce7;"><i class="fas fa-users"></i></div>
-                </div>
-                <h2 class="fw-bold text-dark mb-1">@totalCustomers <span class="fs-5 text-muted">Khách</span></h2>
-            </div>
-        </div>
-    </div>
-
-    <!-- KHU VỰC BIỂU ĐỒ (MỞ RỘNG) -->
-    <div class="row g-4 fade-in-up" style="animation-delay: 0.2s;">
-        <!-- Đã mở rộng Line Chart ra col-xl-8 thay vì 6 -->
-        <div class="col-xl-8">
-            <div class="fox-card p-4 h-100 shadow-sm border-0 bg-white rounded-4">
-                <h5 class="fw-bold text-dark mb-4"><i class="fas fa-chart-area text-primary me-2"></i> Biến Động Doanh Thu (7 Ngày)</h5>
-                <div style="height: 250px; width: 100%;">
-                    <canvas id="dashboardLineChart"></canvas>
-                </div>
-            </div>
-        </div>
-
-        <!-- Đã mở rộng Donut Chart ra col-xl-4 thay vì 3 -->
-        <div class="col-xl-4">
-            <div class="fox-card p-4 h-100 shadow-sm border-0 bg-white rounded-4">
-                <h5 class="fw-bold text-dark mb-4"><i class="fas fa-chart-pie text-warning me-2"></i> Tỷ Trọng Đơn Hàng</h5>
-                <div style="height: 200px; width: 100%; display: flex; justify-content: center;">
-                    <canvas id="dashboardDonutChart"></canvas>
-                </div>
-                <div class="text-center mt-3 small fw-bold">
-                    <span class="text-success me-2"><i class="fas fa-circle me-1"></i> Xong: @completedOrders</span>
-                    <span class="text-warning"><i class="fas fa-circle me-1"></i> Chờ: @pendingOrders</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- NHIỆM VỤ TIẾP THEO -->
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="fox-card p-0 overflow-hidden shadow-sm border-0 bg-white rounded-4">
-                <div class="p-4 border-bottom d-flex justify-content-between align-items-center bg-light">
-                    <h5 class="fw-bold mb-0 text-dark"><i class="fas fa-tasks text-primary me-2"></i> Nhiệm vụ Spa tiếp theo</h5>
-                    <a href="/system/bookings" class="btn btn-sm btn-outline-primary rounded-pill fw-bold px-3">Tới trang Spa</a>
-                </div>
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light text-muted">
-                        <tr>
-                            <th class="ps-4">Khách Hàng & Thú Cưng</th>
-                            <th>Dịch Vụ Spa</th>
-                            <th>Thời Gian</th>
-                            <th>Trạng Thái</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var t in nextTasks)
-                        {
-                            <tr>
-                                <td class="ps-4 py-3">
-                                    <div class="fw-bold text-dark fs-6">@t.CustomerName</div>
-                                    <small class="text-muted"><i class="fas fa-paw me-1 text-primary"></i> @t.PetName (@t.PetBreed)</small>
-                                </td>
-                                <td class="fw-bold text-secondary">@t.ServiceName</td>
-                                <td><span class="badge bg-light text-dark border px-3 py-2"><i class="fas fa-clock text-primary me-1"></i> @t.Time</span></td>
-                                <td><span class="badge @(t.Status == "Đang xử lý" ? "bg-info text-dark" : "bg-warning text-dark") px-3 py-2 rounded-pill">@t.Status</span></td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-}
-
-<script>
-    window.renderDashboardCharts = function (lLabels, lData, dLabels, dData, dColors) {
-        if (typeof Chart === 'undefined') {
-            let script = document.createElement('script');
-            script.src = 'js/chart.umd.js';
-            script.onload = () => initCharts(lLabels, lData, dLabels, dData, dColors);
-            document.head.appendChild(script);
-        } else {
-            initCharts(lLabels, lData, dLabels, dData, dColors);
-        }
-
-        function initCharts(labels1, data1, labels2, data2, colors2) {
-            let ctxLine = document.getElementById('dashboardLineChart');
-            if (ctxLine) {
-                let existingLine = Chart.getChart(ctxLine);
-                if (existingLine) existingLine.destroy();
-                new Chart(ctxLine, {
-                    type: 'line',
-                    data: { labels: labels1, datasets: [{ label: 'Doanh thu (đ)', data: data1, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderWidth: 3, fill: true, tension: 0.4 }] },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true }, x: { grid: { display: false } } } }
-                });
-            }
-
-            let ctxDonut = document.getElementById('dashboardDonutChart');
-            if (ctxDonut) {
-                let existingDonut = Chart.getChart(ctxDonut);
-                if (existingDonut) existingDonut.destroy();
-                new Chart(ctxDonut, {
-                    type: 'doughnut',
-                    data: { labels: labels2, datasets: [{ data: data2, backgroundColor: colors2, borderWidth: 0 }] },
-                    options: { responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { display: false } } }
-                });
-            }
-        }
-    };
-</script>
-
-<style>
-    .fade-in {
-        animation: fadeIn 0.5s ease-in-out;
-    }
-
-    .fade-in-up {
-        animation: fadeInUp 0.5s ease-in-out;
-    }
-
-    @@keyframes fadeIn {
-        from {
-            opacity: 0;
-        }
-
-        to {
-            opacity: 1;
-        }
-    }
-
-    @@keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(15px);
-        }
-
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    .kpi-card {
-        transition: all 0.2s ease;
-        cursor: pointer;
-    }
-
-        .kpi-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 12px 24px rgba(108, 92, 231, 0.15) !important;
-            border-color: #6c5ce7 !important;
-        }
-
-    .icon-box {
-        width: 45px;
-        height: 45px;
-        border-radius: 12px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.5rem;
-    }
-
-    .bg-primary-subtle {
-        background-color: #e0e7ff;
-    }
-
-    .bg-success-subtle {
-        background-color: #d1fae5;
-    }
-
-    .bg-warning-subtle {
-        background-color: #fef3c7;
-    }
-
-    .bg-info-subtle {
-        background-color: #e0f2fe;
-    }
-
-    .bg-danger-subtle {
-        background-color: #fee2e2;
-    }
-
-    .border-purple {
-        border-color: #6c5ce7 !important;
-    }
-</style>
-
 @code {
+    private IJSObjectReference? chartModule;
     private bool isLoading = true;
+    private string loadError = string.Empty;
+    private List<StaffOrderListItemDto> pendingList = new();
+    private List<Product> stockList = new();
     private decimal revToday = 0; private decimal revWeek = 0;
     private int pendingOrders = 0; private int todaySpaCount = 0;
     private int lowStockCount = 0; private int totalCustomers = 0;
@@ -296,6 +75,11 @@ else
     /// <summary>Nạp lại toàn bộ chỉ số + danh sách nhiệm vụ từ DB.</summary>
     private async Task LoadDashboardAsync()
     {
+        try
+        {
+        loadError = string.Empty;
+        pendingList = (await ReportsService.GetOrderListAsync(1000)).Where(o => o.Status is "Chờ xác nhận" or "Đang đóng gói" or "Đang giao hàng" or "Chờ giao hàng").Take(5).ToList();
+        stockList = (await ProductsService.GetActiveProductsAsync()).Where(p => p.StockQuantity <= 5).OrderBy(p => p.StockQuantity).Take(5).ToList();
         // Chỉ số bảng điều khiển được tổng hợp ở tầng service (đơn hàng + spa).
         var metrics = await ReportsService.GetDashboardMetricsAsync();
 
@@ -320,7 +104,7 @@ else
             .Take(6)
             .Select(b => new LocalTaskDto
             {
-                Time = b.AppointmentStart.ToString("HH:mm"),
+                Time = b.AppointmentStart.ToString("HH:mm · dd/MM"),
                 CustomerName = string.IsNullOrWhiteSpace(b.CustomerName) ? "Khách hàng" : b.CustomerName,
                 PetName = string.IsNullOrWhiteSpace(b.PetName) ? "Thú cưng" : b.PetName,
                 PetBreed = string.IsNullOrWhiteSpace(b.PetBreed) ? "—" : b.PetBreed,
@@ -329,7 +113,9 @@ else
             })
             .ToList();
 
-        isLoading = false;
+        }
+        catch (Exception ex) { Logger.LogError(ex, "Không tải được bảng điều khiển."); loadError = "Không tải được dữ liệu. Vui lòng thử lại."; }
+        finally { isLoading = false; }
     }
 
     public void Dispose()
@@ -340,12 +126,13 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender && !isLoading)
+        if (!isLoading && string.IsNullOrEmpty(loadError))
         {
             var dLabels = new[] { "Hoàn Thành", "Cần Xử Lý", "Đã Hủy" };
             var dData = new[] { completedOrders, pendingOrders, cancelledOrders };
-            var dColors = new[] { "#10b981", "#f59e0b", "#ef4444" };
-            await JSRuntime.InvokeVoidAsync("renderDashboardCharts", lineLabels.ToArray(), lineData.ToArray(), dLabels, dData, dColors);
+            var dColors = new[] { "#398675", "#F3A66B", "#b8c5bd" };
+            chartModule ??= await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/staffDashboard.js");
+            await chartModule.InvokeVoidAsync("renderDashboardCharts", lineLabels.ToArray(), lineData.ToArray(), dLabels, dData, dColors);
         }
     }
 }

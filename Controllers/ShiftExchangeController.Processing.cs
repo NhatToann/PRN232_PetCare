@@ -25,6 +25,10 @@ namespace PetShop.Controllers
                 return BadRequest(new ShiftExchangeActionResultDto("error", "Yêu cầu không tồn tại hoặc không thuộc về bạn."));
             }
 
+            var today = DateOnly.FromDateTime(DateTime.Now);
+            if (req.FromDate <= today || (req.Type == "Swap" && req.ToDate <= today))
+                return BadRequest(new ShiftExchangeActionResultDto("error", "Yêu cầu đã quá hạn. Chỉ được đổi ca từ ngày mai trở đi."));
+
             _logger.Line($"[AcceptRequest] Found: Type={req.Type}, FromShiftId={req.FromShiftId}, ToShiftId={req.ToShiftId}, EmployeeId={req.EmployeeId}, FromDate={req.FromDate}, ToDate={req.ToDate}");
 
             var targetDate = req.Type == "Swap" ? req.ToDate : req.FromDate;
@@ -66,28 +70,30 @@ namespace PetShop.Controllers
                 var requesterHasSlot = await _db.WorkSchedules
                     .AnyAsync(s =>
                         s.StaffId == req.EmployeeId &&
-                        s.WorkDate == partnerShift.WorkDate &&
-                        s.StartTime == partnerShift.StartTime &&
-                        s.EndTime == partnerShift.EndTime,
+                        s.ScheduleId != partnerShift.ScheduleId &&
+                        s.WorkDate == myShift.WorkDate &&
+                        s.StartTime < myShift.EndTime &&
+                        s.EndTime > myShift.StartTime,
                         ct);
                 if (requesterHasSlot)
                 {
                     return BadRequest(new ShiftExchangeActionResultDto("error",
-                        $"Người gửi yêu cầu đã có ca cùng khung giờ ngày {partnerShift.WorkDate:dd/MM/yyyy} rồi, không thể nhận thêm ca nữa."));
+                        $"Người gửi yêu cầu đã có ca cùng khung giờ ngày {myShift.WorkDate:dd/MM/yyyy} rồi, không thể nhận thêm ca nữa."));
                 }
 
                 // ⚠️ Kiểm tra responder đã có ca trùng khung giờ ngày nhận (myShift) chưa
                 var responderHasSlot = await _db.WorkSchedules
                     .AnyAsync(s =>
                         s.StaffId == responderStaffId &&
-                        s.WorkDate == myShift.WorkDate &&
-                        s.StartTime == myShift.StartTime &&
-                        s.EndTime == myShift.EndTime,
+                        s.ScheduleId != myShift.ScheduleId &&
+                        s.WorkDate == partnerShift.WorkDate &&
+                        s.StartTime < partnerShift.EndTime &&
+                        s.EndTime > partnerShift.StartTime,
                         ct);
                 if (responderHasSlot)
                 {
                     return BadRequest(new ShiftExchangeActionResultDto("error",
-                        $"Bạn đã có ca cùng khung giờ ngày {myShift.WorkDate:dd/MM/yyyy} rồi, không thể nhận thêm ca nữa."));
+                        $"Bạn đã có ca cùng khung giờ ngày {partnerShift.WorkDate:dd/MM/yyyy} rồi, không thể nhận thêm ca nữa."));
                 }
 
                 // Swap: responder nhận ca requester (myShift), requester nhận ca responder (partnerShift)
@@ -117,20 +123,6 @@ namespace PetShop.Controllers
                 if (myShift is null)
                 {
                     return BadRequest(new ShiftExchangeActionResultDto("error", "Ca cần nhờ làm thay không còn tồn tại."));
-                }
-
-                // ⚠️ Kiểm tra requester đã nhận ca cùng khung giờ chưa
-                var requesterHasSlot = await _db.WorkSchedules
-                    .AnyAsync(s =>
-                        s.StaffId == req.EmployeeId &&
-                        s.WorkDate == myShift.WorkDate &&
-                        s.StartTime == myShift.StartTime &&
-                        s.EndTime == myShift.EndTime,
-                        ct);
-                if (requesterHasSlot)
-                {
-                    return BadRequest(new ShiftExchangeActionResultDto("error",
-                        $"Người gửi yêu cầu đã có ca cùng khung giờ ngày {myShift.WorkDate:dd/MM/yyyy} rồi, không thể nhận thêm ca."));
                 }
 
                 // ⚠️ Kiểm tra responder đã có ca cùng khung giờ chưa

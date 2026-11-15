@@ -1,3 +1,4 @@
+@inject PetShop.Services.StaffActionFeedback Feedback
 @page "/products/inventory"
 @layout PetShop_PRN222.Components.Layout.StaffWorkspaceLayout
 @rendermode InteractiveServer
@@ -5,14 +6,17 @@
 @inject IProductManagementService ProductService
 
 <PageTitle>Quản Lý Tồn Kho</PageTitle>
+<link rel="stylesheet" href="css/staff-dashboard.css" />
 
-<div class="row mb-4">
+<div class="pet-page-heading row mb-4">
     <div class="col-12">
-        <h2 class="fw-bold mb-1 text-dark">Quản Lý Tồn Kho</h2>
+        <span class="eyebrow">CỬA HÀNG & KHO</span><h2 class="fw-bold mb-1 text-dark">Quản Lý Tồn Kho</h2><p class="text-muted">Theo dõi số lượng và bổ sung hàng hóa cho cửa hàng.</p>
     </div>
 </div>
 
-<div class="fox-card p-0 overflow-hidden shadow-sm border-0">
+<div class="inventory-overview"><div><i class="fas fa-boxes-stacked"></i><span>Sản phẩm đang quản lý</span><strong>@(inventoryList?.Count ?? 0)</strong></div><div><i class="fas fa-layer-group"></i><span>Tổng số lượng tồn</span><strong>@(inventoryList?.Sum(i => i.StockQuantity) ?? 0)</strong></div><div><i class="fas fa-triangle-exclamation"></i><span>Cần bổ sung (≤ 5)</span><strong>@(inventoryList?.Count(i => i.StockQuantity <= 5) ?? 0)</strong></div></div>
+<div class="management-toolbar"><div><span class="eyebrow">KIỂM SOÁT HÀNG HÓA</span><h5>Chi tiết tồn kho</h5></div><input class="form-control" style="max-width:320px" placeholder="Tìm sản phẩm…" @bind="inventoryQuery" @bind:event="oninput" /></div>
+<div class="fox-card p-0 overflow-hidden shadow-sm border-0 management-table">
     @if (inventoryList == null)
     {
         <div class="text-center py-5"><div class="spinner-border"></div></div>
@@ -25,23 +29,23 @@
                     <tr>
                         <th class="py-3 text-start ps-4">Sản Phẩm & SKU</th>
                         <th>SL Tồn Kho</th>
-                        <th>Đã Bán</th>
+
                         <th>Trạng Thái</th>
                         <th class="pe-4">Thao Tác</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var item in inventoryList)
+                    @foreach (var item in inventoryList.Where(i => string.IsNullOrWhiteSpace(inventoryQuery) || i.Name.Contains(inventoryQuery, StringComparison.OrdinalIgnoreCase)))
                     {
                         <tr>
                             <td class="text-start ps-4 py-3 d-flex align-items-center gap-3">
                                 <img src="@PetShop.Components.Shared.ImageUrl.Safe(item.ImageUrl)" class="rounded-3 shadow-sm border" style="width: 50px; height: 50px; object-fit: cover;" loading="lazy" decoding="async" />
                                 <div>
-                                    <div class="fw-bold text-dark fs-5">@item.Name</div>
+                                    <div class="fw-bold text-dark">@item.Name</div><small class="text-muted">SKU #PRD-@item.ProductId.ToString("D4")</small>
                                 </div>
                             </td>
                             <td><h4 class="fw-bold mb-0 text-primary">@item.StockQuantity</h4></td>
-                            <td><h5 class="fw-bold mb-0 text-success">@item.SoldQuantity</h5></td>
+
                             <td>
                                 @if (item.StockQuantity <= 0)
                                 {
@@ -77,11 +81,11 @@
                 </div>
                 <div class="modal-body p-4">
                     <label class="fw-bold mb-2">Nhập thêm số lượng</label>
-                    <input type="number" class="form-control form-control-lg mb-3" @bind="addQuantity" />
+                    <input type="number" min="1" step="1" class="form-control form-control-lg mb-3" @bind="addQuantity" @bind:event="oninput" disabled="@savingStock" />
                 </div>
                 <div class="modal-footer border-0 p-4 pt-0">
                     <button class="btn btn-secondary px-4 fw-bold rounded-pill" @onclick="CloseModal">Hủy</button>
-                    <button class="btn btn-primary px-4 fw-bold rounded-pill shadow-sm" style="background-color: #6c5ce7; border:none;" @onclick="SaveStock">Lưu</button>
+                    <button class="btn btn-primary px-4 fw-bold rounded-pill shadow-sm" style="background-color: #6c5ce7; border:none;" @onclick="SaveStock" disabled="@savingStock">@(savingStock ? "Đang lưu…" : "Lưu")</button>
                 </div>
             </div>
         </div>
@@ -89,10 +93,12 @@
 }
 
 @code {
+    private string inventoryQuery = string.Empty;
     public class InventoryItem { public int ProductId { get; set; } public string Name { get; set; } = ""; public string ImageUrl { get; set; } = ""; public int StockQuantity { get; set; } public int SoldQuantity { get; set; } }
     private List<InventoryItem>? inventoryList;
     private InventoryItem? selectedProduct;
     private int addQuantity = 0;
+    private bool savingStock;
 
     protected override async Task OnInitializedAsync() { await LoadInventory(); }
 
@@ -115,14 +121,23 @@
 
     private async Task SaveStock()
     {
+        if (savingStock) return;
+        if (addQuantity <= 0) { Feedback.Show("Số lượng nhập phải lớn hơn 0.", true); return; }
         if (selectedProduct != null && addQuantity > 0)
         {
+            savingStock = true;
+            var productId = selectedProduct.ProductId;
+            var quantity = addQuantity;
+            try
+            {
             // Cộng dồn tồn kho qua tầng service/repository (không dùng SQL thô trong Razor).
-            await ProductService.IncreaseStockAsync(selectedProduct.ProductId, addQuantity);
+            if (!await Feedback.RunAsync(() => ProductService.IncreaseStockAsync(productId, quantity), $"Đã nhập thêm {quantity} sản phẩm vào kho.")) return;
 
             selectedProduct = null;
             await LoadInventory();
             StateHasChanged();
+            }
+            finally { savingStock = false; }
         }
     }
 }

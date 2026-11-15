@@ -185,6 +185,7 @@ namespace PetShop.Controllers
         [Authorize(Policy = AuthPolicies.StaffOrAdmin)]
         public async Task<ActionResult<OrderSummaryDto>> StaffConfirm(int orderId, CancellationToken ct)
         {
+            await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
             var order = await _db.Orders
                 .AsTracking()
                 .Include(o => o.OrderDetails)
@@ -205,13 +206,15 @@ namespace PetShop.Controllers
             {
                 var qty = detail.Quantity ?? 1;
 
-                await _db.Products
+                var changed = await _db.Products
                     .Where(p => p.ProductId == detail.ProductId && p.StockQuantity >= qty)
                     .ExecuteUpdateAsync(s => s.SetProperty(p => p.StockQuantity, p => p.StockQuantity - qty), ct);
+                if (changed != 1) return BadRequest(new { message = "Không đủ tồn kho để xác nhận đơn hàng." });
             }
 
             order.Status = "Chờ giao hàng";
             await _db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
 
             var summary = await ProjectOrderSummary(
                     _db.Orders.AsNoTracking().Where(o => o.OrderId == orderId))

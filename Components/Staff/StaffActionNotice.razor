@@ -1,0 +1,41 @@
+@implements IDisposable
+@inject PetShop.Services.StaffActionFeedback Feedback
+@if (!string.IsNullOrEmpty(Feedback.Message))
+{
+    <div @key="Feedback.Version" class="staff-action-toast alert @(Feedback.IsError ? "alert-danger" : "alert-success") shadow" role="alert" style="position:fixed;top:85px;right:16px;z-index:2100;max-width:calc(100vw - 32px)">
+        @Feedback.Message
+        <button class="btn-close ms-3" aria-label="Đóng thông báo" @onclick="() => Feedback.Show(string.Empty)"></button>
+    </div>
+}
+@code {
+    protected override void OnInitialized() => Feedback.Changed += Refresh;
+    private CancellationTokenSource? dismissal;
+    private void Refresh()
+    {
+        dismissal?.Cancel();
+        dismissal?.Dispose();
+        dismissal = null;
+        if (!string.IsNullOrEmpty(Feedback.Message))
+        {
+            dismissal = new CancellationTokenSource();
+            var version = Feedback.Version;
+            _ = DismissAsync(version, dismissal.Token);
+        }
+        _ = InvokeAsync(StateHasChanged);
+    }
+    private async Task DismissAsync(long version, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(3500, token);
+            await InvokeAsync(() => { if (Feedback.Version == version) Feedback.Show(string.Empty); });
+        }
+        catch (OperationCanceledException) { }
+    }
+    public void Dispose()
+    {
+        Feedback.Changed -= Refresh;
+        dismissal?.Cancel();
+        dismissal?.Dispose();
+    }
+}

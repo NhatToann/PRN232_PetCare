@@ -604,6 +604,7 @@ namespace PetShop.Data
 
                 entity.Property(e => e.OrderId).HasColumnName("order_id");
                 entity.Property(e => e.AdminId).HasColumnName("admin_id");
+                entity.Property(e => e.CustomerNote).HasMaxLength(500).HasColumnName("customer_note");
                 entity.Property(e => e.CustomerId).HasColumnName("customer_id");
                 entity.Property(e => e.Latitude).HasColumnName("latitude");
                 entity.Property(e => e.Longitude).HasColumnName("longitude");

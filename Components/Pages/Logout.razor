@@ -1,0 +1,32 @@
+@page "/logout"
+@inject PetShop.Services.UserSessionService Session
+@inject NavigationManager Navigation
+@inject ILogger<Logout> Logger
+
+<PageTitle>Đăng xuất</PageTitle>
+<p role="status">@message</p>
+@if (failed) { <button class="btn btn-primary" @onclick="SignOut">Thử đăng xuất lại</button> }
+
+@code {
+    private string message = "Đang đăng xuất…";
+    private bool failed;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) { await SignOut(); }
+    }
+    private async Task SignOut()
+    {
+        try
+        {
+            await Session.SignOutAsync();
+            Navigation.NavigateTo("/login", forceLoad: true, replace: true);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Không thể hoàn tất đăng xuất.");
+            failed = true;
+            message = "Không thể đăng xuất. Vui lòng thử lại.";
+            StateHasChanged();
+        }
+    }
+}

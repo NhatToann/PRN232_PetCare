@@ -1,3 +1,4 @@
+@inject PetShop.Services.StaffActionFeedback Feedback
 @page "/system/schedule"
 @layout PetShop_PRN222.Components.Layout.StaffWorkspaceLayout
 @rendermode InteractiveServer
@@ -7,8 +8,10 @@
 @inject IStaffProfileService ProfileService
 @inject UserSessionService UserSession
 @inject NavigationManager Navigation
+@implements IDisposable
 
 <PageTitle>Lịch Làm Việc - Nhân viên</PageTitle>
+<PetShop_PRN222.Components.Staff.ShiftSwapPanel />
 
 <div class="mb-4">
     <h3 class="fw-bold text-dark mb-1">Lịch Trực Cá Nhân</h3>
@@ -48,6 +51,8 @@ else
                 @foreach (var s in schedules)
                 {
                     var isCheckedIn = IsCheckedIn(s);
+                    var isLate = !isCheckedIn && TimeSpan.TryParse(s.EndTime, out var endTime) && DateTime.Now >= s.WorkDate.Date.Add(endTime);
+                    var checkInError = TimeSpan.TryParse(s.EndTime, out var end) ? StaffCheckInPolicy.Validate(s.WorkDate, s.WorkDate.Date.Add(end), DateTime.Now) : "Giờ ca không hợp lệ.";
                     <tr>
                         <td class="text-start ps-5 py-4">
                             <span class="badge bg-info text-dark px-3 py-2 fs-6 rounded-pill shadow-sm">@s.ShiftName</span>
@@ -64,6 +69,10 @@ else
                             {
                                 <span class="badge bg-success px-4 py-2 fs-6 rounded-pill shadow-sm"><i class="fas fa-check me-1"></i> Đã Check-in</span>
                             }
+                            else if (isLate)
+                            {
+                                <span class="badge bg-danger px-4 py-2 fs-6 rounded-pill shadow-sm"><i class="fas fa-triangle-exclamation me-1"></i> Quá giờ check-in</span>
+                            }
                             else
                             {
                                 <span class="badge bg-secondary px-4 py-2 fs-6 rounded-pill shadow-sm">@s.Status</span>
@@ -72,7 +81,7 @@ else
                         <td class="pe-4">
                             @if (!isCheckedIn)
                             {
-                                <button class="btn btn-primary btn-lg rounded-pill px-4 fw-bold shadow" @onclick="() => PerformCheckIn(s.ScheduleId)" disabled="@isCheckingIn">
+                                <button class="btn btn-primary btn-lg rounded-pill px-4 fw-bold shadow" @onclick="() => PerformCheckIn(s.ScheduleId)" disabled="@(isCheckingIn || checkInError is not null)" title="@checkInError">
                                     @if (isCheckingIn)
                                     {
                                         <span class="spinner-border spinner-border-sm me-2"></span>
@@ -100,9 +109,12 @@ else
     private List<StaffScheduleDto>? schedules;
     private string errorMessage = string.Empty;
     private bool isCheckingIn;
+    private System.Threading.Timer? clock;
+    public void Dispose() => clock?.Dispose();
 
     protected override async Task OnInitializedAsync()
     {
+        clock = new System.Threading.Timer(_ => { _ = InvokeAsync(StateHasChanged); }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         await UserSession.LoadAsync();
         var user = UserSession.CurrentUser;
         if (user is null)
@@ -118,7 +130,9 @@ else
 
     private static bool IsCheckedIn(StaffScheduleDto schedule)
     {
-        return string.Equals(schedule.Status, "Đã Check-in", StringComparison.OrdinalIgnoreCase);
+        // Cột varchar cũ lưu chữ Đ thành Ð trên một số collation SQL Server.
+        return string.Equals(schedule.Status.Replace('Ð', 'Đ').Trim(), "Đã Check-in", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(schedule.Status, "CheckedIn", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task PerformCheckIn(int scheduleId)
@@ -133,7 +147,7 @@ else
 
         try
         {
-            var ok = await DashboardService.CheckInAsync(scheduleId);
+            var ok = await Feedback.RunAsync(() => DashboardService.CheckInAsync(scheduleId), "Check-in thành công.");
             if (!ok)
             {
                 errorMessage = "Không check-in được. Vui lòng thử lại.";
